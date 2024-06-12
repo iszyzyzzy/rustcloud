@@ -1,0 +1,6 @@
+jwt_secret="a-secret-key"
+port=8080
+storage_path="./storage"
+redis_uri="redis://127.0.0.1:6379"
+mongodb_uri="mongodb://127.0.0.1:27017"
+mongodb_name="RC"
