@@ -1,8 +1,10 @@
+use mongodb::bson::doc;
 use rocket::Request;
 use rocket::http::Status;
 use rocket::request::{self, FromRequest, Outcome};
 use super::lib::authenticate_jwt;
 use crate::db::connect::{MongoDb,Redis};
+use crate::db::models::User;
 use crate::MyConfig;
 
 
@@ -12,6 +14,7 @@ pub struct AuthenticatedUser {
     pub uuid: String,
     pub username: String,
     pub nickname: String,
+    pub token: Option<String>
 }
 
 #[rocket::async_trait]
@@ -30,6 +33,21 @@ impl<'r> FromRequest<'r> for AuthenticatedUser {
             return Outcome::Error((Status::Unauthorized, ()));
         }
         let token = &auth_header[7..];
+        //先匹配access_key
+        if redis.exists(token).await {
+            let db = mongo.database.collection::<User>("users");
+            let user = db.find_one(doc! { "uuid": redis.get(token).await.unwrap() }, None).await;
+            match user {
+                Ok(user) => {
+                    match user {
+                        Some(user) => return Outcome::Success(AuthenticatedUser { uuid: user.uuid, username: user.username, nickname: user.nickname, token: Some(token.to_owned()) }),
+                        None => return Outcome::Error((Status::Unauthorized, ())),
+                    }
+            },
+                _ => return Outcome::Error((Status::Unauthorized, ())),
+            }
+        }
+
         match authenticate_jwt(token, &config.jwt_secret, mongo, redis).await {
             Ok(user) => return Outcome::Success(user),
             Err(_) => return Outcome::Error((Status::Unauthorized, ())),

@@ -23,19 +23,19 @@ pub struct Claims {
     pub jti: String,
 }
 
-pub fn generate_jwt(user_id: &str,jwt_secret: &str) -> String {
+pub fn generate_jwt(user_id: &str,jwt_secret: &str) -> (String, String) {
     let expiration = Utc::now()
         .checked_add_signed(Duration::hours(4))
         .expect("valid timestamp")
         .timestamp();
-
+    let jti = Uuid::new_v4().to_string();
     let claims = Claims {
         sub: user_id.to_owned(),
         exp: expiration,
-        jti: Uuid::new_v4().to_string(),
+        jti: jti.clone(),
     };
 
-    encode(&Header::default(), &claims, &EncodingKey::from_secret(jwt_secret.as_ref())).expect("JWT token creation failed")
+    (encode(&Header::default(), &claims, &EncodingKey::from_secret(jwt_secret.as_ref())).expect("JWT token creation failed"), jti)
 }
 
 pub fn decode_jwt(token: &str,jwt_secret: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
@@ -46,13 +46,13 @@ pub fn decode_jwt(token: &str,jwt_secret: &str) -> Result<Claims, jsonwebtoken::
 pub async fn authenticate(name: &str, password: &str, mongo: &rocket::State<MongoDb>) -> Result<AuthenticatedUser, Box<dyn std::error::Error + Send + Sync>> {
     let db = &mongo.database;
     let collection = db.collection::<User>("users");
-    let user = collection.find_one(doc! { "username": name }, None).await?;
+    let user = collection.find_one(doc! { "username": name.to_string() }, None).await?;
     match user {
         Some(user) => {
             let argon2 = Argon2::default();
             let password_hash = PasswordHash::new(&user.password).unwrap();
             if argon2.verify_password(password.as_bytes(), &password_hash).is_ok() {
-                return Ok(AuthenticatedUser { uuid: user.uuid, username: user.username, nickname: user.nickname });
+                return Ok(AuthenticatedUser { uuid: user.uuid, username: user.username, nickname: user.nickname, token: None });
             } else {
                 return Err("Invalid password".into());
             }
@@ -76,7 +76,7 @@ pub async fn authenticate_jwt(token: &str, jwt_secret: &str, mongo: &MongoDb, re
             let collection = db.collection::<User>("users");
             let user = collection.find_one(doc! { "uuid": claims.sub }, None).await.unwrap();
             match user {
-                Some(user) => return Ok(AuthenticatedUser { uuid: user.uuid, username: user.username, nickname: user.nickname }),
+                Some(user) => return Ok(AuthenticatedUser { uuid: user.uuid, username: user.username, nickname: user.nickname,token: claims.jti.to_owned().into() }),
                 None => return Err("User not found".into()),
             }
         },
@@ -95,6 +95,7 @@ pub async fn create_user(name: &str, password: &str, nickname: &str, mongo: &Mon
         username: name.to_string(),
         nickname: nickname.to_string(),
         password: password_hash.to_string(),
+        _id: uuid::Uuid::new_v4().to_string()
     };
     collection.insert_one(user, None).await?;
     Ok(())

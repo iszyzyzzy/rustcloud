@@ -35,6 +35,9 @@ async fn rocket() -> _ {
         .manage(config)
         .manage(mongodb)
         .manage(redis)
-        .mount("/", routes![auth::routes::login])
+        .mount("/auth", routes![auth::routes::login])
+        .mount("/auth", routes![auth::routes::logout])
+        .mount("/auth", routes![auth::routes::access_key])
+        .mount("/auth", routes![auth::routes::delete_access_key])
 
 }
