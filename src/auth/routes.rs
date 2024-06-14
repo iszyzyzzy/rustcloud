@@ -61,7 +61,7 @@ pub async fn login(
                 token,
             }));
         }
-        Err(info) => {
+        Err(_) => {
             return Err(status::Custom(
                 Status::Unauthorized,
                 Json(ErrorResponse {
@@ -103,7 +103,7 @@ pub struct AccessKeyResponse {
 
 //长效token
 #[get("/access_key?<device_name>")]
-pub async fn access_key(
+pub async fn create_access_key(
     user: AuthenticatedUser,
     device_name: String,
     redis: &rocket::State<Redis>,

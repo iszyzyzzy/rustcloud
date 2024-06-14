@@ -1,5 +1,7 @@
 #[macro_use] extern crate rocket;
 
+use std::ptr::metadata;
+
 use rocket::figment::{providers::{Env, Format, Toml}, Figment};
 
 mod auth;
@@ -37,7 +39,7 @@ async fn rocket() -> _ {
         .manage(redis)
         .mount("/auth", routes![auth::routes::login])
         .mount("/auth", routes![auth::routes::logout])
-        .mount("/auth", routes![auth::routes::access_key])
+        .mount("/auth", routes![auth::routes::create_access_key])
         .mount("/auth", routes![auth::routes::delete_access_key])
-
+        .mount("/metadata", routes![metadata::routes::add_metadata])
 }
