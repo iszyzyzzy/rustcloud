@@ -1,20 +1,21 @@
-use mongodb::bson::doc;
-use rocket::Request;
-use rocket::http::Status;
-use rocket::request::{self, FromRequest, Outcome};
+use std::str::FromStr;
+
 use super::lib::authenticate_jwt;
-use crate::db::connect::{MongoDb,Redis};
+use crate::db::connect::{MongoDb, Redis};
 use crate::db::models::User;
 use crate::MyConfig;
-
-
-
+use mongodb::bson::doc;
+use mongodb::bson::oid::ObjectId;
+use rocket::http::Status;
+use rocket::request::{self, FromRequest, Outcome};
+use rocket::Request;
 
 pub struct AuthenticatedUser {
-    pub uuid: String,
+    pub uuid: ObjectId,
     pub username: String,
     pub nickname: String,
-    pub token: Option<String>
+    pub token: Option<String>,
+    pub root_id: ObjectId,
 }
 
 #[rocket::async_trait]
@@ -36,14 +37,22 @@ impl<'r> FromRequest<'r> for AuthenticatedUser {
         //先匹配access_key
         if redis.exists(token).await {
             let db = mongo.database.collection::<User>("users");
-            let user = db.find_one(doc! { "uuid": redis.get(token).await.unwrap() }, None).await;
+            let user = db
+                .find_one(doc! { "_id": ObjectId::from_str(redis.get(token).await.unwrap().as_str()).unwrap() }, None)
+                .await;
             match user {
-                Ok(user) => {
-                    match user {
-                        Some(user) => return Outcome::Success(AuthenticatedUser { uuid: user.uuid, username: user.username, nickname: user.nickname, token: Some(token.to_owned()) }),
-                        None => return Outcome::Error((Status::Unauthorized, ())),
+                Ok(user) => match user {
+                    Some(user) => {
+                        return Outcome::Success(AuthenticatedUser {
+                            uuid: user._id,
+                            username: user.username,
+                            nickname: user.nickname,
+                            token: Some(token.to_owned()),
+                            root_id: user.root_id,
+                        })
                     }
-            },
+                    None => return Outcome::Error((Status::Unauthorized, ())),
+                },
                 _ => return Outcome::Error((Status::Unauthorized, ())),
             }
         }

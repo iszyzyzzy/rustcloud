@@ -1,45 +1,65 @@
+use chrono::Utc;
 use serde::{Serialize, Deserialize};
+use mongodb::bson::oid::ObjectId;
 
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct User {
-    pub _id: String,
-    pub uuid: String,
+    pub _id: ObjectId,
     pub username: String,
     pub nickname: String,
     pub password: String,
+    pub root_id: ObjectId,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LoginedDevice {
-    pub _id: String,
+    pub _id: ObjectId,
     pub name: String,
     pub logined_at: i64,
     pub expire_at: i64,
     pub uuid: String, //jti or apikey
-    pub user_uuid: String,
+    pub user_uuid: ObjectId,
 }
 
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 pub enum FileType {
     File,
     Folder,
     Root,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct File {
-    pub _id: String,
+    pub _id: ObjectId,
     pub name: String,
     #[serde(rename = "type")]
     pub type_: FileType,
-    pub father: String,
-    pub children: Vec<String>,
-    pub owner: String,
+    pub father: ObjectId,
+    pub children: Vec<ObjectId>,
+    pub owner: ObjectId,
     pub created_at: i64,
     pub updated_at: i64,
-    pub size: i64,
-    pub md5: String,
-    pub path: String,
+    pub size: u64,//floder时可以随便填
+    pub sha256: String,//floder时可以随便填
+    pub path: String,//floder时可以随便填
+}
+
+impl File {
+    pub fn new_folder(name: &str, father: &ObjectId, owner: &ObjectId, id: Option<ObjectId>) -> Self {
+        Self {
+            _id: id.unwrap_or(ObjectId::new()),
+            name: name.to_string(),
+            type_: FileType::Folder,
+            father: father.clone(),
+            children: vec![],
+            owner: owner.clone(),
+            created_at: Utc::now().timestamp(),
+            updated_at: Utc::now().timestamp(),
+            size: 0,
+            sha256: "".to_string(),
+            path: "".to_string(),
+        }
+    }
 }

@@ -14,3 +14,7 @@ redis = { version = "0.25.4", features = ["tokio-comp","aio","connection-manager
 password-hash = "0.5.0"
 argon2 = "0.5.3"
 uuid = "1.8.0"
+serde_json = "1.0.117"
+async-hash = "0.5.3"
+crypto = "0.5.1"
+sha2 = "0.10.8"

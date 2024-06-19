@@ -73,6 +73,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-hash"
+version = "0.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0bab0fa0df4906d84ad0ce6302744e53c8728a6df185b37c5878d64c8ff3e60"
+dependencies = [
+ "futures",
+ "hex",
+ "num_cpus",
+ "sha2",
+]
+
+[[package]]
 name = "async-stream"
 version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -322,6 +334,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "53fe5e26ff1b7aef8bca9c6080520cfb8d9333c7568e1829cef191a9723e5504"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "crypto"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf1e6e5492f8f0830c37f301f6349e0dac8b2466e4fe89eef90e9eef906cd046"
+dependencies = [
+ "crypto-common",
 ]
 
 [[package]]
@@ -1647,7 +1668,9 @@ name = "rustcloud"
 version = "0.1.0"
 dependencies = [
  "argon2",
+ "async-hash",
  "chrono",
+ "crypto",
  "dotenv",
  "jsonwebtoken",
  "mongodb",
@@ -1655,6 +1678,8 @@ dependencies = [
  "redis",
  "rocket",
  "serde",
+ "serde_json",
+ "sha2",
  "uuid",
 ]
 
