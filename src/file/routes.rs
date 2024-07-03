@@ -1,7 +1,7 @@
 use crate::auth::guard::AuthenticatedUser;
 use crate::db::connect::{MongoDb, Redis};
 use crate::db::models::{File, FileType};
-use crate::public::{ApiError, CustomResponse};
+use crate::public::{check_file_permission, generate_file_path, mongo_error_check, ApiError};
 use crate::MyConfig;
 use mongodb::bson::doc;
 use mongodb::bson::oid::ObjectId;
@@ -14,6 +14,7 @@ use rocket::http::Header;
 use std::fs;
 use std::str::FromStr;
 use rocket::tokio::fs::File as AsyncFile;
+use super::lib::{check_file_sha256, file_sha256};
 
 pub struct CustomFileResponse {
     response: Response<'static>,
@@ -31,32 +32,20 @@ pub async fn get_file(
     user: AuthenticatedUser,
     mongo: &rocket::State<MongoDb>,
     config: &rocket::State<MyConfig>,
-) -> Result<CustomFileResponse, CustomResponse> {
+) -> Result<CustomFileResponse, ApiError> {
     let config = config.inner();
     let db = &mongo.database;
     let collection = db.collection::<File>("files");
 
-    let file = match collection.find_one(doc! { "_id": ObjectId::from_str(uuid).unwrap() }, None).await {
-        Ok(file) => file,
-        Err(_) => return Err(ApiError::InternalServerError(None).to_response()),
-    };
+    let file = collection.find_one(doc! { "_id": ObjectId::from_str(uuid).unwrap() }, None).await;
 
-    let file = match file {
-        Some(file) => file,
-        None => return Err(ApiError::NotFound("File not found".to_string().into()).to_response()),
-    };
+    let file = mongo_error_check(file, Some("File"))?;
 
-    if file.owner != user.uuid {
-        return Err(ApiError::Forbidden("Permission denied".to_string().into()).to_response());
-    }
+    let _ = check_file_permission(&user, &file)?;
 
     match file.type_ {
         FileType::File => {
-            let file_path = if file.path == "FLAT" {
-                format!("{}/flat/{}", config.storage_path, file._id)
-            } else {
-                format!("{}/{}", config.storage_path, file.path)
-            };
+            let file_path = generate_file_path(&file, &config);
 
             let ext = rocket::http::ContentType::from_extension(file.name.split('.').last().unwrap());
 
@@ -71,7 +60,7 @@ pub async fn get_file(
 
         }
         _ => {
-            return Err(ApiError::NotFound("Target is not a file".to_string().into()).to_response())
+            return Err(ApiError::NotFound("Target is not a file".to_string().into()))
         }
     }
 }
@@ -84,33 +73,31 @@ pub async fn upload_file(
     mongo: &rocket::State<MongoDb>,
     redis: &rocket::State<Redis>,
     config: &rocket::State<MyConfig>,
-) -> Result<status::NoContent, CustomResponse> {
+) -> Result<status::NoContent, ApiError> {
+
     if !redis.exists(uuid).await {
-        return Err(ApiError::NotFound("Metadata not found".to_string().into()).to_response());
+        return Err(ApiError::NotFound("Metadata not found".to_string().into()));
     };
     let metadata: File = serde_json::from_str(redis.get(&uuid).await.unwrap().as_str()).unwrap();
-    if metadata.owner != user.uuid {
-        return Err(ApiError::Forbidden("Permission denied".to_string().into()).to_response());
-    }
+    let _ = check_file_permission(&user, &metadata)?;
+
     let config = config.inner();
     let db = &mongo.database;
     let collection = db.collection::<File>("files");
 
-    let file_path = if metadata.path == "FLAT" {
-        format!("{}/flat/{}", config.storage_path, metadata._id)
-    } else {
-        format!("{}/{}", config.storage_path, metadata.path)
-    };
+    let file_path = generate_file_path(&metadata, &config);
 
     match file.open(128.kibibytes()).into_file(&file_path).await {
-        Ok(_) => {}
-        Err(_) => return Err(ApiError::InternalServerError(None).to_response()),
+        Ok(_) => {},
+        Err(_) => return Err(ApiError::InternalServerError(None)),
     }
 
-    let hash = file_sha256(file_path.clone().as_str()).await;
-    if hash != metadata.sha256 {
-        let _ = fs::remove_file(file_path.clone());
-        return Err(ApiError::BadRequest("Hash not match".to_string().into()).to_response());
+    match check_file_sha256(&file_path, &metadata.sha256).await {
+        Ok(_) => {},
+        Err(_) => {
+            let _ = fs::remove_file(file_path.clone());
+            return Err(ApiError::BadRequest("Hash not match".to_string().into()));
+        }
     }
 
     let metadata = File {
@@ -146,29 +133,6 @@ pub struct UpdateFileRequest<'r> {
     pub file: TempFile<'r>,
 }
 
-use rocket::tokio::io::{AsyncReadExt, BufReader};
-use sha2::{Digest, Sha256};
-
-pub async fn file_sha256(file_path: &str) -> String {
-    let file = AsyncFile::open(&file_path).await.unwrap();
-
-    let mut hasher = Sha256::new();
-    let mut buffer = [0; 1024];
-    let mut reader = BufReader::new(file);
-
-    loop {
-        let n = reader.read(&mut buffer).await.unwrap();
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buffer[..n]);
-    }
-    let hash = hasher.finalize();
-    let hash = format!("{:x}", hash);
-
-    hash
-}
-
 #[put("/<uuid>", data = "<form>")]
 pub async fn update_file(
     uuid: &str,
@@ -176,25 +140,25 @@ pub async fn update_file(
     mut form: Form<UpdateFileRequest<'_>>,
     mongo: &rocket::State<MongoDb>,
     config: &rocket::State<MyConfig>,
-) -> Result<status::NoContent, CustomResponse> {
+) -> Result<status::NoContent, ApiError> {
     let config = config.inner();
     let db = &mongo.database;
     let collection = db.collection::<File>("files");
     let metadata = match collection.find_one(doc! { "_id": ObjectId::from_str(uuid).unwrap() }, None).await {
         Ok(metadata) => metadata,
-        Err(_) => return Err(ApiError::InternalServerError(None).to_response()),
+        Err(_) => return Err(ApiError::InternalServerError(None)),
     };
     let metadata = match metadata {
         Some(metadata) => metadata,
-        None => return Err(ApiError::NotFound("File not found".to_string().into()).to_response()),
+        None => return Err(ApiError::NotFound("File not found".to_string().into())),
     };
     if metadata.owner != user.uuid {
-        return Err(ApiError::Forbidden("Permission denied".to_string().into()).to_response());
+        return Err(ApiError::Forbidden("Permission denied".to_string().into()));
     }
     match metadata.type_ {
         FileType::File => {}
         _ => {
-            return Err(ApiError::BadRequest("Target is not a file".to_string().into()).to_response());
+            return Err(ApiError::BadRequest("Target is not a file".to_string().into()));
         }
     }
 
@@ -211,7 +175,7 @@ pub async fn update_file(
 
     if hash != form.sha256 {
         let _ = fs::rename(file_path.clone() + ".tmp", file_path);
-        return Err(ApiError::BadRequest("Hash not match".to_string().into()).to_response());
+        return Err(ApiError::BadRequest("Hash not match".to_string().into()));
     }
 
     let _ = collection

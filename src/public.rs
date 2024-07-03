@@ -51,16 +51,65 @@ impl ApiError {
             ),
         }
     }
+    pub fn _change_message(&self, message: String) -> Self {
+        match self {
+            ApiError::InternalServerError(_) => ApiError::InternalServerError(Some(message)),
+            ApiError::NotFound(_) => ApiError::NotFound(Some(message)),
+            ApiError::Unauthorized(_) => ApiError::Unauthorized(Some(message)),
+            ApiError::Forbidden(_) => ApiError::Forbidden(Some(message)),
+            ApiError::BadRequest(_) => ApiError::BadRequest(Some(message)),
+        }
+    }
+    pub fn _to_string(&self) -> String {
+        match self {
+            ApiError::InternalServerError(message) => message.clone().unwrap_or_default(),
+            ApiError::NotFound(message) => message.clone().unwrap_or_default(),
+            ApiError::Unauthorized(message) => message.clone().unwrap_or_default(),
+            ApiError::Forbidden(message) => message.clone().unwrap_or_default(),
+            ApiError::BadRequest(message) => message.clone().unwrap_or_default(),
+        }
+    }
 }
 
-pub type CustomResponse = status::Custom<Json<ErrorResponse>>;
+use rocket::request::Request;
+use rocket::response::{self, Responder};
 
-pub fn mongo_error_check<T>(result: Result<Option<T>,mongodb::error::Error>,document_name: &str) -> Result<T, CustomResponse> {
+impl <'r> Responder<'r, 'static> for ApiError {
+    fn respond_to(self, req: &Request<'_>) -> response::Result<'static> {
+        self.to_response().respond_to(req)
+    }
+}
+
+//pub type CustomResponse = status::Custom<Json<ErrorResponse>>;
+
+pub fn mongo_error_check<T>(result: Result<Option<T>,mongodb::error::Error>,document_name: Option<&str>) -> Result<T, ApiError> {
+    let document_name = document_name.unwrap_or("document");
     match result {
-        Ok(result) => match result {
-            Some(result) => Ok(result),
-            None => Err(ApiError::NotFound(Some(format!("{} not found", document_name))).to_response()),
-        },
-        Err(_) => Err(ApiError::InternalServerError(None).to_response()),
+        Ok(Some(document)) => Ok(document),
+        Ok(None) => Err(ApiError::NotFound(Some(format!("{} not found", document_name)))),
+        //Err(err) => Err(ApiError::InternalServerError(Some(err.to_string()))),
+        Err(_) => Err(ApiError::InternalServerError(None)),
+    }
+}
+
+use crate::auth::guard::AuthenticatedUser;
+use crate::db::models::File;
+
+pub fn check_file_permission(user: &AuthenticatedUser, file: &File) -> Result<(), ApiError> {
+    if file.owner != user.uuid {
+        return Err(
+            ApiError::Forbidden("Permission denied".to_string().into()),
+        )
+    };
+    Ok(())
+}
+
+use crate::MyConfig;
+
+pub fn generate_file_path(file: &File, config: &MyConfig) -> String {
+    if file.path == "FLAT" {
+        format!("{}/flat/{}", config.storage_path, file._id)
+    } else {
+        format!("{}/{}", config.storage_path, file.path)
     }
 }

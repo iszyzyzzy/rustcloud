@@ -8,7 +8,7 @@ use rocket::response::status;
 use rocket::serde::json::Json;
 use crate::db::models::{FileType, File};
 use crate::auth::guard::AuthenticatedUser;
-use crate::public::{ApiError, CustomResponse,mongo_error_check};
+use crate::public::{ApiError, mongo_error_check};
 use crate::db::connect::{Redis,MongoDb};
 use crate::MyConfig;
 
@@ -34,7 +34,7 @@ pub async fn add_metadata(
     user: AuthenticatedUser,
     redis: &rocket::State<Redis>,
     mongo: &rocket::State<MongoDb>
-) -> Result<Json<MetaDataCreateResponse>, CustomResponse> {
+) -> Result<Json<MetaDataCreateResponse>, ApiError> {
     let id = ObjectId::new();
     let metadata = metadata.into_inner();
     let metadata = File {
@@ -53,8 +53,8 @@ pub async fn add_metadata(
     let father = mongo.database.collection::<File>("files").find_one(doc! { "_id": metadata.father }, None).await;
     match father {
         Ok(Some(_)) => {}
-        Ok(None) => return Err(ApiError::NotFound("Father folder not found".to_string().into()).to_response()),
-        Err(_) => return Err(ApiError::InternalServerError(None).to_response()),
+        Ok(None) => return Err(ApiError::NotFound("Father folder not found".to_string().into())),
+        Err(_) => return Err(ApiError::InternalServerError(None)),
     }
     match metadata.type_ {
         FileType::Folder => {
@@ -71,7 +71,7 @@ pub async fn add_metadata(
             let _ = redis.expire(id.to_string().as_str(), 24 * 60 * 60).await;
             Ok(Json(MetaDataCreateResponse { id:id.to_string() }))
         },
-        _ => Err(ApiError::Forbidden("Permission denied".to_string().into()).to_response()),
+        _ => Err(ApiError::Forbidden("Permission denied".to_string().into())),
     }
 }
 
@@ -129,10 +129,10 @@ pub enum Response {
     FileTree(FileTree),
 }
 
-fn check_permission(user: AuthenticatedUser, file: &File) -> Result<(), CustomResponse> {
+fn check_permission(user: AuthenticatedUser, file: &File) -> Result<(), ApiError> {
     if file.owner != user.uuid {
         return Err(
-            ApiError::Forbidden("Permission denied".to_string().into()).to_response(),
+            ApiError::Forbidden("Permission denied".to_string().into()),
         )
     };
     Ok(())
@@ -144,11 +144,11 @@ pub async fn get_metadata(
     tree: Option<bool>,
     user: AuthenticatedUser,
     mongo: &rocket::State<MongoDb>,
-) -> Result<Json<Response>, CustomResponse> {
+) -> Result<Json<Response>, ApiError> {
     let tree = tree.unwrap_or(false);
     let db = mongo.database.collection::<File>("files");
     let file = db.find_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()}, None).await;
-    let file = mongo_error_check(file, "File")?;
+    let file = mongo_error_check(file, Some("File"))?;
     let _ = check_permission(user, &file)?;
     if tree {
         let tree = get_tree(&ObjectId::from_str(uuid).unwrap(), &mongo).await;
@@ -158,7 +158,7 @@ pub async fn get_metadata(
             }
             Err(_) => {
                 return Err(
-                    ApiError::InternalServerError(None).to_response(),
+                    ApiError::InternalServerError(None),
                 )
             }
         }
@@ -173,11 +173,11 @@ pub async fn update_metadata(
     metadata: Json<File>,
     user: AuthenticatedUser,
     mongo: &rocket::State<MongoDb>,
-) -> Result<status::NoContent, CustomResponse> {
+) -> Result<status::NoContent, ApiError> {
     let new_metadata = metadata.into_inner();
     let db = mongo.database.collection::<File>("files");
     let file = db.find_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()}, None).await;
-    let file = mongo_error_check(file, "File")?;
+    let file = mongo_error_check(file, Some("File"))?;
     //其实只有father,name可以更新
     //sha256和size是在文件更新的时候改的
     //path,type不能更新
@@ -190,7 +190,7 @@ pub async fn update_metadata(
         new_metadata.path != file.path ||
         new_metadata.owner != file.owner ||
         new_metadata.created_at != file.created_at {
-        return Err(ApiError::BadRequest("Only father and name can be updated".to_string().into()).to_response());
+        return Err(ApiError::BadRequest("Only father and name can be updated".to_string().into()));
     };
     //再直接覆写掉updated_at
     let new_metadata = File {
@@ -200,13 +200,13 @@ pub async fn update_metadata(
     let _ = check_permission(user, &file)?;
     let old_father = match db.find_one(doc! {"_id": file.father}, None).await {
         Ok(Some(file)) => file,
-        Ok(None) => return Err(ApiError::InternalServerError(None).to_response()),//这是不应该发生的情况
-        Err(_) => return Err(ApiError::InternalServerError(None).to_response()),
+        Ok(None) => return Err(ApiError::InternalServerError(None)),//这是不应该发生的情况
+        Err(_) => return Err(ApiError::InternalServerError(None)),
     };
     let new_father = match db.find_one(doc! {"_id": new_metadata.father}, None).await {
         Ok(Some(file)) => file,
-        Ok(None) => return Err(ApiError::NotFound("New father folder not found".to_string().into()).to_response()),
-        Err(_) => return Err(ApiError::InternalServerError(None).to_response()),
+        Ok(None) => return Err(ApiError::NotFound("New father folder not found".to_string().into())),
+        Err(_) => return Err(ApiError::InternalServerError(None)),
     };
     let mut old_father_children = old_father.children;
     let mut new_father_children = new_father.children;
@@ -240,7 +240,7 @@ pub async fn delete_metadata(
     mongo: &rocket::State<MongoDb>,
     redis: &rocket::State<Redis>,
     config: &rocket::State<MyConfig>,
-) -> Result<status::NoContent, CustomResponse> {
+) -> Result<status::NoContent, ApiError> {
     if redis.exists(uuid).await {
         let _ = redis.delete(uuid).await;
         return Ok(status::NoContent);
@@ -248,10 +248,10 @@ pub async fn delete_metadata(
     let config = config.inner();
     let db = mongo.database.collection::<File>("files");
     let file = db.find_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()}, None).await;
-    let file = mongo_error_check(file, "File")?;
+    let file = mongo_error_check(file, Some("File"))?;
     let _ = check_permission(user, &file)?;
     let father = db.find_one(doc! {"_id": file.father}, None).await;
-    let father = mongo_error_check(father, "File")?;
+    let father = mongo_error_check(father, Some("File"))?;
     let mut father_children = father.children;
     father_children.retain(|x| x != &file._id);
     let _ = db.update_one(doc! { "_id": father._id }, doc! { "$set": { "children": father_children } }, None).await.unwrap();

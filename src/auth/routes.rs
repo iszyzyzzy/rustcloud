@@ -3,7 +3,7 @@ use super::guard::AuthenticatedUser;
 use crate::db::connect::{MongoDb, Redis};
 use crate::db::models::LoginedDevice;
 use crate::MyConfig;
-use crate::public::{ApiError,CustomResponse};
+use crate::public::ApiError;
 use chrono::Utc;
 use mongodb::bson::doc;
 use mongodb::bson::oid::ObjectId;
@@ -32,7 +32,7 @@ pub async fn login(
     mongo: &rocket::State<MongoDb>,
     redis: &rocket::State<Redis>,
     config: &rocket::State<MyConfig>,
-) -> Result<Json<LoginResponse>, CustomResponse> {
+) -> Result<Json<LoginResponse>, ApiError> {
     let user = user.into_inner();
     let auth_result = authenticate(&user.username, &user.password, mongo).await;
     match auth_result {
@@ -59,7 +59,7 @@ pub async fn login(
         }
         Err(_) => {
             return Err(
-                ApiError::Unauthorized("Invalid username or password".to_string().into()).to_response(),
+                ApiError::Unauthorized("Invalid username or password".to_string().into()),
             );
         }
     }
@@ -70,7 +70,7 @@ pub async fn logout(
     user: AuthenticatedUser,
     mongo: &rocket::State<MongoDb>,
     redis: &rocket::State<Redis>,
-) -> Result<status::NoContent, CustomResponse> {
+) -> Result<status::NoContent, ApiError> {
     match user.token {
         Some(token) => {
             redis.delete(token.as_str()).await;
@@ -79,7 +79,7 @@ pub async fn logout(
         }
         None => {
             return Err(
-                ApiError::Unauthorized("Invalid token".to_string().into()).to_response(),
+                ApiError::Unauthorized("Invalid token".to_string().into()),
             );
         }
     }
@@ -98,7 +98,7 @@ pub async fn create_access_key(
     device_name: String,
     redis: &rocket::State<Redis>,
     mongo: &rocket::State<MongoDb>
-) -> Result<Json<AccessKeyResponse>, CustomResponse> {
+) -> Result<Json<AccessKeyResponse>, ApiError> {
     let token = uuid::Uuid::new_v4().to_string();
     redis.set(&token, &user.uuid.to_string()).await;
     redis.expire(&token, 4 * 60 * 60).await;
@@ -125,7 +125,7 @@ pub async fn delete_access_key(
     request: Json<DeleteAccessKeyRequest>,
     redis: &rocket::State<Redis>,
     mongo: &rocket::State<MongoDb>
-) -> Result<status::NoContent, CustomResponse> {
+) -> Result<status::NoContent, ApiError> {
     let db = mongo.database.collection::<LoginedDevice>("logined_devices");
     let _ = db.delete_one(doc! { "uuid": request.token.clone(), "user_uuid": user.uuid }, None).await;
     redis.delete(request.token.as_str()).await;
