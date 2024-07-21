@@ -24,7 +24,7 @@ impl MongoDb {
         }
     }
     pub async fn first_init(&self) -> Result<ObjectId, ()> {
-        let collection_list = self.database.list_collection_names(None).await.unwrap();
+        let collection_list = self.database.list_collection_names().await.unwrap();
         let check_collection = vec![
             "users".to_string(),
             "files".to_string(),
@@ -35,7 +35,7 @@ impl MongoDb {
             return Ok(self
                 .database
                 .collection::<File>("files")
-                .find_one(doc! {"name": "root","type": "Root"}, None)
+                .find_one(doc! {"name": "root","type": "Root"})
                 .await
                 .unwrap()
                 .unwrap()
@@ -43,22 +43,22 @@ impl MongoDb {
         }
         if !collection_list.is_empty() {
             print!("警告：数据库非空，已有数据将被清空");
-            self.database.drop(None).await.unwrap();
+            self.database.drop().await.unwrap();
         }
         print!("空数据库,正在初始化...");
         let _ = self
             .database
-            .create_collection("users", None)
+            .create_collection("users")
             .await
             .expect("Failed to create collection");
         let _ = self
             .database
-            .create_collection("files", None)
+            .create_collection("files")
             .await
             .expect("Failed to create collection");
         let _ = self
             .database
-            .create_collection("logined_devices", None)
+            .create_collection("logined_devices")
             .await
             .expect("Failed to create collection");
 
@@ -78,7 +78,7 @@ impl MongoDb {
             path: "FLAT".to_string(),
             storage_type: "FLAT".to_string(),
         };
-        let _ = metadata_collection.insert_one(root, None).await;
+        let _ = metadata_collection.insert_one(root).await;
 
         let _ = crate::auth::lib::create_user("admin", "admin", "admin", &self, &root_id)
             .await
@@ -95,7 +95,7 @@ impl MongoDb {
             )
             .build();
         let _ = logined_device_collection
-            .create_index(index_model, None)
+            .create_index(index_model)
             .await;
         Ok(root_id)
     }
@@ -130,6 +130,16 @@ impl Redis {
                 .await
                 .unwrap(),
         }
+    }
+    pub async fn recover_from_db(&self, mongodb: &MongoDb) {
+        //恢复登录
+        let collection = mongodb.database.collection::<LoginedDevice>("logined_devices");
+        let mut cursor = collection.find(doc! {}).await.unwrap();
+        while cursor.advance().await.unwrap() {
+            let device = cursor.deserialize_current().unwrap();
+            self.set(&device.uuid, &device.user_uuid.to_hex()).await;
+            let _ = self.expire_at(&device.uuid, device.expire_at).await;
+            }
     }
     pub async fn get_connection(&self) -> redis::aio::ConnectionManager {
         self.connection_manager.clone()
@@ -197,6 +207,18 @@ impl Redis {
     {
         let mut con = self.get_connection().await;
         let _: () = con.expire(key, seconds).await.unwrap();
+    }
+    pub async fn expire_at<'a, K>(&self, key: K, time: chrono::DateTime<chrono::Utc>) -> Result<(), &str>
+    where
+        K: redis::ToRedisArgs + Send + Sync + 'a,
+    {
+        let mut con = self.get_connection().await;
+        let seconds = time.timestamp() - chrono::Utc::now().timestamp();
+        if seconds < 0 {
+            return Err("Time is in the past");
+        }
+        let _: () = con.expire(key, seconds).await.unwrap();
+        Ok(())
     }
     pub async fn decr<'a, K>(&self, key: K)
     where

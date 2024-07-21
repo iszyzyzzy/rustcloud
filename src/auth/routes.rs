@@ -1,13 +1,14 @@
 use super::lib::{authenticate, generate_jwt};
 use super::guard::AuthenticatedUser;
 use crate::db::connect::{MongoDb, Redis};
-use crate::db::models::LoginedDevice;
+use crate::db::models::{LoginedDevice, LoginedDeviceType};
 use crate::MyConfig;
 use crate::libs::ApiError;
 use chrono::Utc;
 use mongodb::bson::doc;
 use mongodb::bson::oid::ObjectId;
 use rocket::form::Form;
+use rocket::futures::TryStreamExt;
 use rocket::response::status;
 use rocket::serde::json::Json;
 
@@ -44,12 +45,13 @@ pub async fn login(
                 user_uuid: login_user.uuid.clone(),
                 uuid: jti,
                 name: user.device_name,
-                logined_at: Utc::now().timestamp(),
-                expire_at: Utc::now().timestamp() + 4 * 60 * 60,
+                logined_at: chrono::Utc::now(),
+                expire_at: chrono::Utc::now() + chrono::Duration::hours(4),
                 _id: ObjectId::new(),
+                type_: LoginedDeviceType::Normal,
             };
             let db = mongo.database.collection::<LoginedDevice>("logined_devices");
-            let _ = db.insert_one(login_device, None).await;
+            let _ = db.insert_one(login_device).await;
             return Ok(Json(LoginResponse {
                 uuid: login_user.uuid.to_string(),
                 username: login_user.username,
@@ -75,7 +77,7 @@ pub async fn logout(
         Some(token) => {
             redis.delete(token.as_str()).await;
             let db = mongo.database.collection::<LoginedDevice>("logined_devices");
-            let _ = db.delete_one(doc! { "uuid": token }, None).await;
+            let _ = db.delete_one(doc! { "uuid": token }).await;
         }
         None => {
             return Err(
@@ -107,10 +109,11 @@ pub async fn create_access_key(
         user_uuid: user.uuid,
         uuid: token.clone(),
         name: device_name,
-        logined_at: Utc::now().timestamp(),
-        expire_at: 0,
+        logined_at: Utc::now(),
+        expire_at: Utc::now() + chrono::Duration::days(365),
         _id: ObjectId::new(),
-    }, None).await;
+        type_: LoginedDeviceType::ApiKey,
+    }).await;
     Ok(Json(AccessKeyResponse { token }))
 }
 
@@ -127,7 +130,38 @@ pub async fn delete_access_key(
     mongo: &rocket::State<MongoDb>
 ) -> Result<status::NoContent, ApiError> {
     let db = mongo.database.collection::<LoginedDevice>("logined_devices");
-    let _ = db.delete_one(doc! { "uuid": request.token.clone(), "user_uuid": user.uuid }, None).await;
+    let _ = db.delete_one(doc! { "uuid": request.token.clone(), "user_uuid": user.uuid }).await;
     redis.delete(request.token.as_str()).await;
     Ok(status::NoContent)
+}
+
+#[get("/list_devices")]
+pub async fn list_devices(
+    user: AuthenticatedUser,
+    mongo: &rocket::State<MongoDb>,
+) -> Result<Json<Vec<LoginedDevice>>, ApiError> {
+    let db = mongo.database.collection::<LoginedDevice>("logined_devices");
+    let devices = db
+        .find(doc! { "user_uuid": user.uuid })
+        .await;
+    let devices = match devices {
+        Ok(devices) => {
+            let devices = match devices.try_collect().await {
+                Ok(devices) => devices,
+                Err(_) => {
+                    return Err(
+                        ApiError::InternalServerError("DB error".to_string().into()),
+                    );
+                }
+            };
+            devices
+        },
+        Err(_) => {
+            return Err(
+                ApiError::InternalServerError("DB error".to_string().into()),
+            );
+        }
+    };
+
+    Ok(Json(devices))
 }

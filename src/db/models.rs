@@ -12,14 +12,25 @@ pub struct User {
     pub root_id: ObjectId,
 }
 
+use mongodb::bson::serde_helpers::chrono_datetime_as_bson_datetime;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum LoginedDeviceType {
+    Normal,
+    ApiKey,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LoginedDevice {
     pub _id: ObjectId,
     pub name: String,
-    pub logined_at: i64,
-    pub expire_at: i64,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
+    pub logined_at: chrono::DateTime<chrono::Utc>,
+    #[serde(with = "chrono_datetime_as_bson_datetime")]
+    pub expire_at: chrono::DateTime<chrono::Utc>,
     pub uuid: String, //jti or apikey
     pub user_uuid: ObjectId,
+    pub type_: LoginedDeviceType,
 }
 
 

@@ -22,7 +22,7 @@ pub async fn get_file(
     let db = &mongo.database;
     let collection = db.collection::<File>("files");
 
-    let metadata = collection.find_one(doc! { "_id": ObjectId::from_str(uuid).unwrap() }, None).await;
+    let metadata = collection.find_one(doc! { "_id": ObjectId::from_str(uuid).unwrap() }).await;
 
     let metadata = mongo_error_check(metadata, Some("File"))?;
 
@@ -65,12 +65,11 @@ pub async fn upload_file(
         size: save_result.size,
         ..metadata
     };
-    let _ = collection.insert_one(metadata.clone(), None).await;
+    let _ = collection.insert_one(metadata.clone()).await;
     let _ = collection
         .update_one(
             doc! { "_id": metadata.father },
-            doc! { "$push": { "children": metadata._id } },
-            None,
+            doc! { "$push": { "children": metadata._id } }
         )
         .await;
     let _: () = redis.delete(uuid).await;
@@ -96,7 +95,7 @@ pub async fn update_file(
 ) -> Result<status::NoContent, ApiError> {
     let db = &mongo.database;
     let collection = db.collection::<File>("files");
-    let metadata = mongo_error_check(collection.find_one(doc! { "_id": ObjectId::from_str(uuid).unwrap() }, None).await, Some("File"))?;
+    let metadata = mongo_error_check(collection.find_one(doc! { "_id": ObjectId::from_str(uuid).unwrap() }).await, Some("File"))?;
     check_file_permission(&user, &metadata)?;
     match metadata.type_ {
         FileType::File => {}
@@ -114,8 +113,7 @@ pub async fn update_file(
             doc! { "$set": doc! { "sha256": save_result.sha256 },
                     "$set": doc! { "updated_at": chrono::Utc::now().timestamp() },
                     "$set": doc! { "size": save_result.size as i64 },
-            },
-            None,
+            }
         )
         .await; 
     Ok(status::NoContent)

@@ -29,7 +29,7 @@ pub struct CrateShareLinkResponse {
 }
 
 #[post("/crate", data = "<request>")]
-pub async  fn crate_share_link( // 所有的分享链接都会在服务器重启时被清除
+pub async  fn crate_share_link(
     request: Json<CrateShareLinkRequest<'_>>,
     user: AuthenticatedUser,
     mongo: &rocket::State<MongoDb>,
@@ -39,7 +39,7 @@ pub async  fn crate_share_link( // 所有的分享链接都会在服务器重启
     let db = &mongo.database;
     let collection = db.collection::<File>("files");
     
-    let metadata = collection.find_one(doc! { "_id": ObjectId::from_str(request.target_uuid).unwrap() }, None).await;
+    let metadata = collection.find_one(doc! { "_id": ObjectId::from_str(request.target_uuid).unwrap() }).await;
     let metadata = mongo_error_check(metadata, Some("File"))?;
 
     check_file_permission(&user, &metadata)?;
@@ -82,7 +82,7 @@ async fn path_find(mut path: Vec<&str>, file_metadata: File, collation: Collecti
         return Err(ApiError::NotFound("File not found".to_string().into()));
     }
 
-    let file_metadata = collation.find_one(doc! { "_id": ObjectId::from_str(t).unwrap() }, None).await;
+    let file_metadata = collation.find_one(doc! { "_id": ObjectId::from_str(t).unwrap() }).await;
     let file_metadata = mongo_error_check(file_metadata, Some("File"))?;
 
     Box::pin(async move {
@@ -123,7 +123,7 @@ pub async fn get_share_file(
         return Err(ApiError::BadRequest("Download limit reached".to_string().into()));
     }
     let file_id: String = redis.get(&uuid).await;
-    let file_metadata = collection.find_one(doc! { "_id": ObjectId::from_str(file_id.as_str()).unwrap() }, None).await;
+    let file_metadata = collection.find_one(doc! { "_id": ObjectId::from_str(file_id.as_str()).unwrap() }).await;
 
     let file_metadata = mongo_error_check(file_metadata, Some("File"))?;
 

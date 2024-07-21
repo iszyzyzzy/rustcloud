@@ -59,7 +59,7 @@ pub async fn add_metadata(
         path: "FLAT".to_string(),
         storage_type: metadata.storage_type
     };
-    let father = mongo.database.collection::<File>("files").find_one(doc! { "_id": metadata.father }, None).await;
+    let father = mongo.database.collection::<File>("files").find_one(doc! { "_id": metadata.father }).await;
     match father {
         Ok(Some(_)) => {}
         Ok(None) => return Err(ApiError::NotFound("Father folder not found".to_string().into())),
@@ -68,11 +68,11 @@ pub async fn add_metadata(
     match metadata.type_ {
         FileType::Folder => {
             let db = mongo.database.collection::<File>("files");
-            let _ = db.insert_one(metadata.clone(), None).await;
-            let father = db.find_one(doc! { "_id": metadata.father }, None).await.unwrap().unwrap();
+            let _ = db.insert_one(metadata.clone()).await;
+            let father = db.find_one(doc! { "_id": metadata.father }).await.unwrap().unwrap();
             let mut t = father.children;
             t.push(metadata._id);
-            let _ = db.update_one(doc! { "_id": father._id }, doc! { "$set": { "children": t } }, None).await;
+            let _ = db.update_one(doc! { "_id": father._id }, doc! { "$set": { "children": t } }).await;
             return Ok(Json(MetaDataCreateResponse { id:id.to_string() }));
         },
         FileType::File => {
@@ -103,7 +103,7 @@ pub struct FileTree {
 
 async fn get_tree(root_id:&ObjectId,mongo:&MongoDb) -> Result<FileTree, Box<dyn std::error::Error + Send + Sync>> {
     let db = mongo.database.collection::<File>("files");
-    let file = db.find_one(doc! {"_id": root_id}, None).await.unwrap();
+    let file = db.find_one(doc! {"_id": root_id}).await.unwrap();
     match file {
         Some(file) => {
             let mut children = vec![];
@@ -156,7 +156,7 @@ pub async fn get_metadata(
 ) -> Result<Json<Response>, ApiError> {
     let tree = tree.unwrap_or(false);
     let db = mongo.database.collection::<File>("files");
-    let file = db.find_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()}, None).await;
+    let file = db.find_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()}).await;
     let file = mongo_error_check(file, Some("File"))?;
     let _ = check_permission(user, &file)?;
     if tree {
@@ -185,7 +185,7 @@ pub async fn update_metadata(
 ) -> Result<status::NoContent, ApiError> {
     let new_metadata = metadata.into_inner();
     let db = mongo.database.collection::<File>("files");
-    let file = db.find_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()}, None).await;
+    let file = db.find_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()}).await;
     let file = mongo_error_check(file, Some("File"))?;
     //其实只有father,name可以更新
     //sha256和size是在文件更新的时候改的
@@ -207,12 +207,12 @@ pub async fn update_metadata(
         ..new_metadata
     };
     let _ = check_permission(user, &file)?;
-    let old_father = match db.find_one(doc! {"_id": file.father}, None).await {
+    let old_father = match db.find_one(doc! {"_id": file.father}).await {
         Ok(Some(file)) => file,
         Ok(None) => return Err(ApiError::InternalServerError("Unexpected error".to_string().into())),//这是不应该发生的情况
         Err(_) => return Err(ApiError::InternalServerError("Database error".to_string().into())),
     };
-    let new_father = match db.find_one(doc! {"_id": new_metadata.father}, None).await {
+    let new_father = match db.find_one(doc! {"_id": new_metadata.father}).await {
         Ok(Some(file)) => file,
         Ok(None) => return Err(ApiError::NotFound("New father folder not found".to_string().into())),
         Err(_) => return Err(ApiError::InternalServerError("Database error".to_string().into())),
@@ -225,19 +225,17 @@ pub async fn update_metadata(
         .update_one(
             doc! {"_id": old_father._id},
             doc! { "$set": doc! { "children": old_father_children },
-                    "$set": doc! { "updated_at": Utc::now().timestamp() } },  
-            None,
+                    "$set": doc! { "updated_at": Utc::now().timestamp() } }
         )
         .await;
     let _ = db
         .update_one(
             doc! {"_id": new_father._id},
             doc! { "$set": doc! { "children": new_father_children },
-                    "$set": doc! { "updated_at": Utc::now().timestamp() } },
-            None,
+                    "$set": doc! { "updated_at": Utc::now().timestamp() } }
         )
         .await;
-    let _ = db.replace_one(doc!{"_id": ObjectId::from_str(uuid).unwrap()}, new_metadata, None).await;
+    let _ = db.replace_one(doc!{"_id": ObjectId::from_str(uuid).unwrap()}, new_metadata).await;
     Ok(status::NoContent)
 }
 
@@ -255,15 +253,15 @@ pub async fn delete_metadata(
         return Ok(status::NoContent);
     }
     let db = mongo.database.collection::<File>("files");
-    let file = db.find_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()}, None).await;
+    let file = db.find_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()}).await;
     let file = mongo_error_check(file, Some("File"))?;
     let _ = check_permission(user, &file)?;
-    let father = db.find_one(doc! {"_id": file.father}, None).await;
+    let father = db.find_one(doc! {"_id": file.father}).await;
     let father = mongo_error_check(father, Some("File"))?;
     let mut father_children = father.children;
     father_children.retain(|x| x != &file._id);
-    let _ = db.update_one(doc! { "_id": father._id }, doc! { "$set": { "children": father_children } }, None).await.unwrap();
-    let _ = db.delete_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()}, None).await.unwrap();
+    let _ = db.update_one(doc! { "_id": father._id }, doc! { "$set": { "children": father_children } }).await.unwrap();
+    let _ = db.delete_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()}).await.unwrap();
     let factory = storage_factory.lock().await;
     let _ = factory.delete_file(&file).await;
     Ok(status::NoContent)

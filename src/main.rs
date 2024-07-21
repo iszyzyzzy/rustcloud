@@ -135,6 +135,7 @@ async fn rocket() -> _ {
             auth::routes::logout,
             auth::routes::create_access_key,
             auth::routes::delete_access_key,
+            auth::routes::list_devices,
         ])
         .mount("/metadata", routes![
             file_metadata::routes::add_metadata,

@@ -60,7 +60,7 @@ pub async fn authenticate(
     let db = &mongo.database;
     let collection = db.collection::<User>("users");
     let user = collection
-        .find_one(doc! { "username": name.to_string() }, None)
+        .find_one(doc! { "username": name.to_string() })
         .await?;
     match user {
         Some(user) => {
@@ -104,7 +104,7 @@ pub async fn authenticate_jwt(
             let db = &mongo.database;
             let collection = db.collection::<User>("users");
             let user = collection
-                .find_one(doc! { "uuid": claims.sub }, None)
+                .find_one(doc! { "uuid": claims.sub })
                 .await
                 .unwrap();
             match user {
@@ -144,7 +144,7 @@ pub async fn create_user(
         _id: ObjectId::new(),
         root_id: user_root_id.clone(),
     };
-    collection.insert_one(&user, None).await?;
+    collection.insert_one(&user).await?;
     let collection = db.collection::<File>("files");
     collection
         .insert_one(
@@ -153,8 +153,7 @@ pub async fn create_user(
                 root_id,
                 &user._id,
                 Some(user_root_id),
-            ),
-            None,
+            )
         )
         .await?;
     Ok(())
