@@ -1079,6 +1079,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "main_app"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "async-hash",
+ "async-trait",
+ "bson",
+ "chrono",
+ "crypto",
+ "dotenv",
+ "jsonwebtoken",
+ "mongodb",
+ "password-hash",
+ "redis",
+ "rocket",
+ "serde",
+ "serde_json",
+ "sha2",
+ "uuid",
+]
+
+[[package]]
 name = "match_cfg"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1729,28 +1751,6 @@ checksum = "d31b7153270ebf48bf91c65ae5b0c00e749c4cfad505f66530ac74950249582f"
 dependencies = [
  "rustc_version 0.2.3",
  "semver 0.9.0",
-]
-
-[[package]]
-name = "rustcloud"
-version = "0.1.0"
-dependencies = [
- "argon2",
- "async-hash",
- "async-trait",
- "bson",
- "chrono",
- "crypto",
- "dotenv",
- "jsonwebtoken",
- "mongodb",
- "password-hash",
- "redis",
- "rocket",
- "serde",
- "serde_json",
- "sha2",
- "uuid",
 ]
 
 [[package]]
