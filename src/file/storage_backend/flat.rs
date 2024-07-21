@@ -39,7 +39,7 @@ async fn check_file_sha256(file_path: &Path, sha256: &str) -> Result<String, ()>
 }
 
 fn generate_file_path(metadata: &File, config: &StorageConfig) -> String {
-    format!("{}/{}", config.flat_storage_path, metadata._id.to_string())
+    format!("{}/{}", config.flat_storage_path, metadata._id)
 }
 
 pub struct LocalFlatStorageBackend {
@@ -108,7 +108,7 @@ impl StorageBackend for LocalFlatStorageBackend {
     }
     async fn delete_file(&self, metadata: &File) -> Result<(), ApiError> {
         let file_path = generate_file_path(metadata, &self.config);
-        let _ = fs::remove_file(file_path);
+        let _ = fs::remove_file(file_path).await;
         Ok(())
     }
 }

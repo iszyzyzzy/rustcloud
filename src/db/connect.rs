@@ -16,7 +16,7 @@ impl MongoDb {
         let client = Client::with_uri_str(&db_uri)
             .await
             .expect("Failed to initialize MongoDB client");
-        let database = client.database(&db_name);
+        let database = client.database(db_name);
 
         MongoDb {
             _client: client,
@@ -46,17 +46,17 @@ impl MongoDb {
             self.database.drop().await.unwrap();
         }
         print!("空数据库,正在初始化...");
-        let _ = self
+        self
             .database
             .create_collection("users")
             .await
             .expect("Failed to create collection");
-        let _ = self
+        self
             .database
             .create_collection("files")
             .await
             .expect("Failed to create collection");
-        let _ = self
+        self
             .database
             .create_collection("logined_devices")
             .await
@@ -65,12 +65,12 @@ impl MongoDb {
         let metadata_collection = self.database.collection::<File>("files");
         let root_id = ObjectId::new();
         let root = File {
-            _id: root_id.clone(),
+            _id: root_id,
             name: "root".to_string(),
             type_: super::models::FileType::Root,
-            father: root_id.clone(),
+            father: root_id,
             children: vec![],
-            owner: root_id.clone(),
+            owner: root_id,
             created_at: chrono::Utc::now().timestamp(),
             updated_at: chrono::Utc::now().timestamp(),
             size: 0,
@@ -80,7 +80,7 @@ impl MongoDb {
         };
         let _ = metadata_collection.insert_one(root).await;
 
-        let _ = crate::auth::lib::create_user("admin", "admin", "admin", &self, &root_id)
+        crate::auth::lib::create_user("admin", "admin", "admin", self, &root_id)
             .await
             .unwrap();
 
@@ -101,12 +101,12 @@ impl MongoDb {
     }
 }
 
-fn compare_vec(a: &Vec<String>, b: &Vec<String>) -> bool {
+fn compare_vec(a: &[String], b: &[String]) -> bool {
     if a.len() != b.len() {
         return false;
     }
-    let mut a = a.clone();
-    let mut b = b.clone();
+    let mut a = a.to_owned();
+    let mut b = b.to_owned();
     a.sort();
     b.sort();
     a == b
@@ -158,8 +158,8 @@ impl Redis {
         RV: redis::FromRedisValue,
     {
         let mut con = self.get_connection().await;
-        let value = con.brpop(key, 0.0).await.unwrap();
-        value
+        
+        con.brpop(key, 0.0).await.unwrap()
     }
     pub async fn exists<'a, K>(&self, key: K) -> bool
     where

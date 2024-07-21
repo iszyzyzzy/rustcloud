@@ -26,7 +26,7 @@ impl<'r> FromRequest<'r> for AuthenticatedUser {
         let mongo = request.rocket().state::<MongoDb>().unwrap();
         let redis = request.rocket().state::<Redis>().unwrap();
         let config = request.rocket().state::<MyConfig>().unwrap();
-        if let None = request.headers().get_one("Authorization") {
+        if request.headers().get_one("Authorization").is_none() {
             return Outcome::Error((Status::Unauthorized, ()));
         }
         let auth_header = request.headers().get_one("Authorization").unwrap();
@@ -41,8 +41,7 @@ impl<'r> FromRequest<'r> for AuthenticatedUser {
                 .find_one(doc! { "_id": ObjectId::from_str(redis.get::<String, String>(token.to_string()).await.as_str()).unwrap() })
                 .await;
             match user {
-                Ok(user) => match user {
-                    Some(user) => {
+                Ok(Some(user)) => {
                         return Outcome::Success(AuthenticatedUser {
                             uuid: user._id,
                             username: user.username,
@@ -51,8 +50,7 @@ impl<'r> FromRequest<'r> for AuthenticatedUser {
                             root_id: user.root_id,
                         })
                     }
-                    None => return Outcome::Error((Status::Unauthorized, ())),
-                },
+                Ok(None) => return Outcome::Error((Status::Unauthorized, ())),
                 _ => return Outcome::Error((Status::Unauthorized, ())),
             }
         }

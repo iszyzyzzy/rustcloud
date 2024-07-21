@@ -42,7 +42,7 @@ pub async fn login(
             redis.set(&token, &login_user.uuid.to_string()).await;
             redis.expire(&token, 4 * 60 * 60).await;
             let login_device = LoginedDevice {
-                user_uuid: login_user.uuid.clone(),
+                user_uuid: login_user.uuid,
                 uuid: jti,
                 name: user.device_name,
                 logined_at: chrono::Utc::now(),
@@ -52,17 +52,17 @@ pub async fn login(
             };
             let db = mongo.database.collection::<LoginedDevice>("logined_devices");
             let _ = db.insert_one(login_device).await;
-            return Ok(Json(LoginResponse {
+            Ok(Json(LoginResponse {
                 uuid: login_user.uuid.to_string(),
                 username: login_user.username,
                 nickname: login_user.nickname,
                 token,
-            }));
+            }))
         }
         Err(_) => {
-            return Err(
+            Err(
                 ApiError::Unauthorized("Invalid username or password".to_string().into()),
-            );
+            )
         }
     }
 }
@@ -146,15 +146,15 @@ pub async fn list_devices(
         .await;
     let devices = match devices {
         Ok(devices) => {
-            let devices = match devices.try_collect().await {
+            
+            match devices.try_collect().await {
                 Ok(devices) => devices,
                 Err(_) => {
                     return Err(
                         ApiError::InternalServerError("DB error".to_string().into()),
                     );
                 }
-            };
-            devices
+            }
         },
         Err(_) => {
             return Err(

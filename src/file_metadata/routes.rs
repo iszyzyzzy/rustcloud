@@ -46,7 +46,7 @@ pub async fn add_metadata(
         None => return Err(ApiError::BadRequest("Storage backend not found".to_string().into())),
     }
     let metadata = File {
-        _id: id.clone(),
+        _id: id,
         name: metadata.name,
         type_: metadata.type_,
         father: ObjectId::from_str(&metadata.father).unwrap(),
@@ -73,7 +73,7 @@ pub async fn add_metadata(
             let mut t = father.children;
             t.push(metadata._id);
             let _ = db.update_one(doc! { "_id": father._id }, doc! { "$set": { "children": t } }).await;
-            return Ok(Json(MetaDataCreateResponse { id:id.to_string() }));
+            Ok(Json(MetaDataCreateResponse { id:id.to_string() }))
         },
         FileType::File => {
             let _: () = redis.set(id.to_string().as_str(), serde_json::to_string(&metadata).unwrap().as_str()).await;
@@ -108,14 +108,14 @@ async fn get_tree(root_id:&ObjectId,mongo:&MongoDb) -> Result<FileTree, Box<dyn 
         Some(file) => {
             let mut children = vec![];
             for child_id in file.children {
-                children.push(Box::pin(get_tree(&child_id, &mongo)).await?);
+                children.push(Box::pin(get_tree(&child_id, mongo)).await?);
             }
             let tree = FileTree {
                 _id: file._id,
                 name: file.name,
                 type_: file.type_,
                 father: file.father,
-                children: children,
+                children,
                 owner: file.owner,
                 created_at: file.created_at,
                 updated_at: file.updated_at,
@@ -123,10 +123,10 @@ async fn get_tree(root_id:&ObjectId,mongo:&MongoDb) -> Result<FileTree, Box<dyn 
                 sha256: file.sha256,
                 path: file.path
             };
-            return Ok(tree);
+            Ok(tree)
         }
         None => {
-            return Err("File not found".into());
+            Err("File not found".into())
         }
     }
 }
@@ -158,9 +158,9 @@ pub async fn get_metadata(
     let db = mongo.database.collection::<File>("files");
     let file = db.find_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()}).await;
     let file = mongo_error_check(file, Some("File"))?;
-    let _ = check_permission(user, &file)?;
+    check_permission(user, &file)?;
     if tree {
-        let tree = get_tree(&ObjectId::from_str(uuid).unwrap(), &mongo).await;
+        let tree = get_tree(&ObjectId::from_str(uuid).unwrap(), mongo).await;
         match tree {
             Ok(tree) => {
                 return Ok(Json(Response::FileTree(tree)));
@@ -206,7 +206,7 @@ pub async fn update_metadata(
         updated_at: Utc::now().timestamp(),
         ..new_metadata
     };
-    let _ = check_permission(user, &file)?;
+    check_permission(user, &file)?;
     let old_father = match db.find_one(doc! {"_id": file.father}).await {
         Ok(Some(file)) => file,
         Ok(None) => return Err(ApiError::InternalServerError("Unexpected error".to_string().into())),//这是不应该发生的情况
@@ -255,7 +255,7 @@ pub async fn delete_metadata(
     let db = mongo.database.collection::<File>("files");
     let file = db.find_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()}).await;
     let file = mongo_error_check(file, Some("File"))?;
-    let _ = check_permission(user, &file)?;
+    check_permission(user, &file)?;
     let father = db.find_one(doc! {"_id": file.father}).await;
     let father = mongo_error_check(father, Some("File"))?;
     let mut father_children = father.children;

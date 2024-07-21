@@ -61,12 +61,12 @@ pub struct File {
 impl File {
     pub fn new_folder(name: &str, father: &ObjectId, owner: &ObjectId, id: Option<ObjectId>) -> Self {
         Self {
-            _id: id.unwrap_or(ObjectId::new()),
+            _id: id.unwrap_or_default(),
             name: name.to_string(),
             type_: FileType::Folder,
-            father: father.clone(),
+            father: *father,
             children: vec![],
-            owner: owner.clone(),
+            owner: *owner,
             created_at: Utc::now().timestamp(),
             updated_at: Utc::now().timestamp(),
             size: 0,

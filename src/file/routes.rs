@@ -26,14 +26,14 @@ pub async fn get_file(
 
     let metadata = mongo_error_check(metadata, Some("File"))?;
 
-    let _ = check_file_permission(&user, &metadata)?;
+    check_file_permission(&user, &metadata)?;
 
     match metadata.type_ {
         FileType::File => {
             Ok(CustomFileResponse::new(metadata, storage_factory).await)
         }
         _ => {
-            return Err(ApiError::NotFound("Target is not a file".to_string().into()))
+            Err(ApiError::NotFound("Target is not a file".to_string().into()))
         }
     } 
 }

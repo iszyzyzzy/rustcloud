@@ -74,7 +74,7 @@ pub enum GetFileResponse {
 }
 
 async fn path_find(mut path: Vec<&str>, file_metadata: File, collation: Collection<File>) -> Result<File, ApiError> {
-    if path.len() == 0 {
+    if path.is_empty() {
         return Ok(file_metadata);
     }
     let t = path.pop().unwrap();
@@ -157,10 +157,10 @@ pub async fn get_share_file(
     match file_metadata.type_ {
         FileType::File => {
             let _ = redis.decr(format!("{}_limit", uuid).as_str()).await;
-            return Ok(GetFileResponse::File(CustomFileResponse::new(file_metadata, storage_factory).await));
+            Ok(GetFileResponse::File(CustomFileResponse::new(file_metadata, storage_factory).await))
         },
         _ => {
-            return Err(ApiError::BadRequest("Target is not a file".to_string().into()));
+            Err(ApiError::BadRequest("Target is not a file".to_string().into()))
         }
     }
 }

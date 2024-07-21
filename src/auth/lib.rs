@@ -70,19 +70,19 @@ pub async fn authenticate(
                 .verify_password(password.as_bytes(), &password_hash)
                 .is_ok()
             {
-                return Ok(AuthenticatedUser {
+                Ok(AuthenticatedUser {
                     uuid: user._id,
                     username: user.username,
                     nickname: user.nickname,
                     token: None,
                     root_id: user.root_id,
-                });
+                })
             } else {
-                return Err("Invalid password".into());
+                Err("Invalid password".into())
             }
         }
         None => {
-            return Err("User not found".into());
+            Err("User not found".into())
         }
     }
 }
@@ -109,7 +109,7 @@ pub async fn authenticate_jwt(
                 .unwrap();
             match user {
                 Some(user) => {
-                    return Ok(AuthenticatedUser {
+                    Ok(AuthenticatedUser {
                         uuid: user._id,
                         username: user.username,
                         nickname: user.nickname,
@@ -117,10 +117,10 @@ pub async fn authenticate_jwt(
                         root_id: user.root_id,
                     })
                 }
-                None => return Err("User not found".into()),
+                None => Err("User not found".into()),
             }
         }
-        Err(_) => return Err("Invalid jwt token".into()),
+        Err(_) => Err("Invalid jwt token".into()),
     }
 }
 
@@ -142,7 +142,7 @@ pub async fn create_user(
         nickname: nickname.to_string(),
         password: password_hash.to_string(),
         _id: ObjectId::new(),
-        root_id: user_root_id.clone(),
+        root_id: user_root_id,
     };
     collection.insert_one(&user).await?;
     let collection = db.collection::<File>("files");
