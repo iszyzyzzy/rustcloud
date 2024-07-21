@@ -3,7 +3,7 @@ use super::guard::AuthenticatedUser;
 use crate::db::connect::{MongoDb, Redis};
 use crate::db::models::LoginedDevice;
 use crate::MyConfig;
-use crate::public::ApiError;
+use crate::libs::ApiError;
 use chrono::Utc;
 use mongodb::bson::doc;
 use mongodb::bson::oid::ObjectId;

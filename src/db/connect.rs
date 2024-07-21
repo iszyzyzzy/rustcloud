@@ -76,6 +76,7 @@ impl MongoDb {
             size: 0,
             sha256: "".to_string(),
             path: "FLAT".to_string(),
+            storage_type: "FLAT".to_string(),
         };
         let _ = metadata_collection.insert_one(root, None).await;
 
@@ -133,39 +134,75 @@ impl Redis {
     pub async fn get_connection(&self) -> redis::aio::ConnectionManager {
         self.connection_manager.clone()
     }
-    pub async fn _queue_push(&self, key: &str, value: &str) {
+    pub async fn _queue_push<'a, K, V>(&self, key: K, value: V)
+    where
+        K: redis::ToRedisArgs + Send + Sync + 'a,
+        V: redis::ToRedisArgs + Send + Sync + 'a,
+    {
         let mut con = self.get_connection().await;
         let _: () = con.lpush(key, value).await.unwrap();
     }
-    pub async fn _queue_pop(&self, key: &str) -> String {
+    pub async fn _queue_pop<'a, K, RV>(&self, key: K) -> RV
+    where
+        K: redis::ToRedisArgs + Send + Sync + 'a,
+        RV: redis::FromRedisValue,
+    {
         let mut con = self.get_connection().await;
-        let value: String = con.brpop(key, 0.0).await.unwrap();
+        let value = con.brpop(key, 0.0).await.unwrap();
         value
     }
-    pub async fn exists(&self, key: &str) -> bool {
+    pub async fn exists<'a, K>(&self, key: K) -> bool
+    where
+        K: redis::ToRedisArgs + Send + Sync + 'a,
+    {
         let mut con = self.get_connection().await;
         let r: bool = con.exists(key).await.unwrap();
         r
     }
-    pub async fn _exists_in_range(&self, key: &str, value: &str) -> bool {
+    pub async fn _exists_in_range<'a, K, V>(&self, key: K, value: V) -> bool
+    where
+        K: redis::ToRedisArgs + Send + Sync + 'a,
+        V: redis::FromRedisValue + Eq + Send + Sync + 'a,
+    {
         let mut con = self.get_connection().await;
-        let values: Vec<String> = con.lrange(key, 0, -1).await.unwrap();
-        values.contains(&value.to_string())
+        let values: Vec<V> = con.lrange(key, 0, -1).await.unwrap();
+        values.contains(&value)
     }
-    pub async fn set(&self, key: &str, value: &str) {
+    pub async fn set<'a, K, V>(&self, key: K, value: V)
+    where
+        K: redis::ToRedisArgs + Send + Sync + 'a,
+        V: redis::ToRedisArgs + Send + Sync + 'a,
+    {
         let mut con = self.get_connection().await;
         let _: () = con.set(key, value).await.unwrap();
     }
-    pub async fn get(&self, key: &str) -> Result<String, redis::RedisError> {
+    pub async fn get<'a, K, RV>(&self, key: K) -> RV
+    where
+        K: redis::ToRedisArgs + Send + Sync + 'a,
+        RV: redis::FromRedisValue,
+    {
         let mut con = self.get_connection().await;
-        con.get(key).await
+        con.get(key).await.unwrap()
     }
-    pub async fn delete(&self, key: &str) {
+    pub async fn delete<'a, K>(&self, key: K)
+    where
+        K: redis::ToRedisArgs + Send + Sync + 'a,
+    {
         let mut con = self.get_connection().await;
         let _: () = con.del(key).await.unwrap();
     }
-    pub async fn expire(&self, key: &str, seconds: i64) {
+    pub async fn expire<'a, K>(&self, key: K, seconds: i64)
+    where
+        K: redis::ToRedisArgs + Send + Sync + 'a,
+    {
         let mut con = self.get_connection().await;
         let _: () = con.expire(key, seconds).await.unwrap();
+    }
+    pub async fn decr<'a, K>(&self, key: K)
+    where
+        K: redis::ToRedisArgs + Send + Sync + 'a,
+    {
+        let mut con = self.get_connection().await;
+        let _: () = con.decr(key, 1).await.unwrap();
     }
 }

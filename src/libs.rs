@@ -88,7 +88,7 @@ pub fn mongo_error_check<T>(result: Result<Option<T>,mongodb::error::Error>,docu
         Ok(Some(document)) => Ok(document),
         Ok(None) => Err(ApiError::NotFound(Some(format!("{} not found", document_name)))),
         //Err(err) => Err(ApiError::InternalServerError(Some(err.to_string()))),
-        Err(_) => Err(ApiError::InternalServerError(None)),
+        Err(_) => Err(ApiError::InternalServerError("MongoDB error".to_string().into())),
     }
 }
 
@@ -102,14 +102,4 @@ pub fn check_file_permission(user: &AuthenticatedUser, file: &File) -> Result<()
         )
     };
     Ok(())
-}
-
-use crate::MyConfig;
-
-pub fn generate_file_path(file: &File, config: &MyConfig) -> String {
-    if file.path == "FLAT" {
-        format!("{}/flat/{}", config.storage_path, file._id)
-    } else {
-        format!("{}/{}", config.storage_path, file.path)
-    }
 }

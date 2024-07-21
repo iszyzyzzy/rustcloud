@@ -1,0 +1,14 @@
+services:
+  redis_dev:
+    image: redis:latest
+    container_name: redis_dev
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  mongodb_dev:
+    image: mongo:latest
+    container_name: mongodb_dev
+    restart: unless-stopped
+    ports:
+      - "27017:27017"

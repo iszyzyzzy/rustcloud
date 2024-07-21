@@ -8,10 +8,11 @@ use rocket::response::status;
 use rocket::serde::json::Json;
 use crate::db::models::{FileType, File};
 use crate::auth::guard::AuthenticatedUser;
-use crate::public::{ApiError, mongo_error_check};
+use crate::file::storage_backend::lib::StorageFactory;
+use std::sync::Arc;
+use rocket::tokio::sync::Mutex;
+use crate::libs::{ApiError, mongo_error_check};
 use crate::db::connect::{Redis,MongoDb};
-use crate::MyConfig;
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MetaDataCreateRequest {
     pub name: String,
@@ -19,6 +20,7 @@ pub struct MetaDataCreateRequest {
     pub father: String,
     pub size: u64,
     pub sha256: String,
+    pub storage_type: String
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -33,10 +35,16 @@ pub async fn add_metadata(
     metadata: Json<MetaDataCreateRequest>,
     user: AuthenticatedUser,
     redis: &rocket::State<Redis>,
-    mongo: &rocket::State<MongoDb>
+    mongo: &rocket::State<MongoDb>,
+    storage_factory: &rocket::State<Arc<Mutex<StorageFactory>>>,
 ) -> Result<Json<MetaDataCreateResponse>, ApiError> {
     let id = ObjectId::new();
     let metadata = metadata.into_inner();
+    let factory = storage_factory.lock().await;
+    match factory.get_backend(&metadata.storage_type) {
+        Some(_) => {}
+        None => return Err(ApiError::BadRequest("Storage backend not found".to_string().into())),
+    }
     let metadata = File {
         _id: id.clone(),
         name: metadata.name,
@@ -48,13 +56,14 @@ pub async fn add_metadata(
         created_at: Utc::now().timestamp(),
         updated_at: Utc::now().timestamp(),
         children: vec![],
-        path: "FLAT".to_string()
+        path: "FLAT".to_string(),
+        storage_type: metadata.storage_type
     };
     let father = mongo.database.collection::<File>("files").find_one(doc! { "_id": metadata.father }, None).await;
     match father {
         Ok(Some(_)) => {}
         Ok(None) => return Err(ApiError::NotFound("Father folder not found".to_string().into())),
-        Err(_) => return Err(ApiError::InternalServerError(None)),
+        Err(_) => return Err(ApiError::InternalServerError("Database error".to_string().into())),
     }
     match metadata.type_ {
         FileType::Folder => {
@@ -67,8 +76,8 @@ pub async fn add_metadata(
             return Ok(Json(MetaDataCreateResponse { id:id.to_string() }));
         },
         FileType::File => {
-            let _ = redis.set(id.to_string().as_str(), serde_json::to_string(&metadata).unwrap().as_str()).await;
-            let _ = redis.expire(id.to_string().as_str(), 24 * 60 * 60).await;
+            let _: () = redis.set(id.to_string().as_str(), serde_json::to_string(&metadata).unwrap().as_str()).await;
+            let _: () = redis.expire(id.to_string().as_str(), 24 * 60 * 60).await;
             Ok(Json(MetaDataCreateResponse { id:id.to_string() }))
         },
         _ => Err(ApiError::Forbidden("Permission denied".to_string().into())),
@@ -158,7 +167,7 @@ pub async fn get_metadata(
             }
             Err(_) => {
                 return Err(
-                    ApiError::InternalServerError(None),
+                    ApiError::InternalServerError("Unknown error during tree generation".to_string().into()),
                 )
             }
         }
@@ -200,13 +209,13 @@ pub async fn update_metadata(
     let _ = check_permission(user, &file)?;
     let old_father = match db.find_one(doc! {"_id": file.father}, None).await {
         Ok(Some(file)) => file,
-        Ok(None) => return Err(ApiError::InternalServerError(None)),//这是不应该发生的情况
-        Err(_) => return Err(ApiError::InternalServerError(None)),
+        Ok(None) => return Err(ApiError::InternalServerError("Unexpected error".to_string().into())),//这是不应该发生的情况
+        Err(_) => return Err(ApiError::InternalServerError("Database error".to_string().into())),
     };
     let new_father = match db.find_one(doc! {"_id": new_metadata.father}, None).await {
         Ok(Some(file)) => file,
         Ok(None) => return Err(ApiError::NotFound("New father folder not found".to_string().into())),
-        Err(_) => return Err(ApiError::InternalServerError(None)),
+        Err(_) => return Err(ApiError::InternalServerError("Database error".to_string().into())),
     };
     let mut old_father_children = old_father.children;
     let mut new_father_children = new_father.children;
@@ -239,13 +248,12 @@ pub async fn delete_metadata(
     user: AuthenticatedUser,
     mongo: &rocket::State<MongoDb>,
     redis: &rocket::State<Redis>,
-    config: &rocket::State<MyConfig>,
+    storage_factory: &rocket::State<Arc<Mutex<StorageFactory>>>,
 ) -> Result<status::NoContent, ApiError> {
     if redis.exists(uuid).await {
-        let _ = redis.delete(uuid).await;
+        let _: () = redis.delete(uuid).await;
         return Ok(status::NoContent);
     }
-    let config = config.inner();
     let db = mongo.database.collection::<File>("files");
     let file = db.find_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()}, None).await;
     let file = mongo_error_check(file, Some("File"))?;
@@ -256,12 +264,8 @@ pub async fn delete_metadata(
     father_children.retain(|x| x != &file._id);
     let _ = db.update_one(doc! { "_id": father._id }, doc! { "$set": { "children": father_children } }, None).await.unwrap();
     let _ = db.delete_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()}, None).await.unwrap();
-    let path = if file.path == "FLAT" {
-        format!("{}/flat/{}", config.storage_path, file._id)
-    } else {
-        format!("{}/{}", config.storage_path, file.path)
-    };
-    let _ = crate::file::lib::delete_file(&path);
+    let factory = storage_factory.lock().await;
+    let _ = factory.delete_file(&file).await;
     Ok(status::NoContent)
 }
 

@@ -38,7 +38,7 @@ impl<'r> FromRequest<'r> for AuthenticatedUser {
         if redis.exists(token).await {
             let db = mongo.database.collection::<User>("users");
             let user = db
-                .find_one(doc! { "_id": ObjectId::from_str(redis.get(token).await.unwrap().as_str()).unwrap() }, None)
+                .find_one(doc! { "_id": ObjectId::from_str(redis.get::<String, String>(token.to_string()).await.as_str()).unwrap() }, None)
                 .await;
             match user {
                 Ok(user) => match user {

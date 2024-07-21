@@ -1,6 +1,8 @@
-jwt_secret="a-secret-key"
 port=8000
-storage_path="./storage"
+address="0.0.0.0"
+jwt_secret="a-secret-key"
+flat_storage_path="./storage/flat"
+cache_storage_path="./storage/cache"
 redis_uri="redis://localhost:6379"
 mongodb_uri="mongodb://localhost:27017"
 mongodb_name="RC"

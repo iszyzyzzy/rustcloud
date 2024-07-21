@@ -44,6 +44,7 @@ pub struct File {
     pub size: u64,//floder时可以随便填
     pub sha256: String,//floder时可以随便填
     pub path: String,//floder时可以随便填
+    pub storage_type: String,
 }
 
 impl File {
@@ -60,6 +61,7 @@ impl File {
             size: 0,
             sha256: "".to_string(),
             path: "".to_string(),
+            storage_type: "FLAT".to_string(),
         }
     }
 }
