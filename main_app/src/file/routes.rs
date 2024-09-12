@@ -59,6 +59,8 @@ pub async fn upload_file(
     let collection = db.collection::<File>("files");
 
     let factory = storage_factory.lock().await;
+    
+    let file_type = super::lib::get_file_type(&file).await; 
     let save_result = factory.check_sha256_and_save(&metadata, None,&mut file).await?;
 
     let metadata = File {
@@ -73,7 +75,9 @@ pub async fn upload_file(
         )
         .await;
     let _: () = redis.delete(uuid).await;
-    Ok(status::NoContent)
+    match file_type {
+        _ => Ok(status::NoContent)
+    }
 }
 
 use rocket::form::Form;

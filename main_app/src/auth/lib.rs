@@ -1,6 +1,5 @@
 use super::guard::AuthenticatedUser;
-use crate::db::connect::MongoDb;
-use crate::db::connect::Redis;
+use crate::db::connect::{MongoDb, Redis};
 use crate::db::models::{File, User};
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},

@@ -261,6 +261,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b236fc92302c97ed75b38da1f4917b5cdda4984745740f153a5d3059e48d725e"
 
 [[package]]
+name = "byteorder"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
+
+[[package]]
 name = "bytes"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -271,6 +277,17 @@ name = "cc"
 version = "1.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2aba8f4e9906c7ce3c73463f62a7f0c65183ada1a2d47e397cc8810827f9694f"
+
+[[package]]
+name = "cfb"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d38f2da7a0a2c4ccf0065be06397cc26a81f4e528be095826eee9d4adbb8c60f"
+dependencies = [
+ "byteorder",
+ "fnv",
+ "uuid",
+]
 
 [[package]]
 name = "cfg-if"
@@ -950,6 +967,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "infer"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc150e5ce2330295b8616ce0e3f53250e53af31759a9dbedad1621ba29151847"
+dependencies = [
+ "cfb",
+]
+
+[[package]]
 name = "inlinable_string"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1089,6 +1115,7 @@ dependencies = [
  "chrono",
  "crypto",
  "dotenv",
+ "infer",
  "jsonwebtoken",
  "mongodb",
  "password-hash",
@@ -1097,6 +1124,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "shared_lib",
  "uuid",
 ]
 
@@ -1989,6 +2017,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "shared_lib"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "mongodb",
+ "redis",
+ "serde",
 ]
 
 [[package]]

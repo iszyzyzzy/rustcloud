@@ -3,7 +3,7 @@
 use std::{net::IpAddr, sync::Arc};
 
 use mongodb::bson::oid::ObjectId;
-use rocket::{figment::{providers::{Env, Format, Toml}, Figment}, serde::json::Json, tokio::sync::Mutex};
+use rocket::{figment::{providers::{Env, Format, Serialized, Toml}, Figment}, serde::json::Json, tokio::sync::Mutex};
 use crate::file::storage_backend::lib::StorageBackend;
 
 mod libs;
@@ -12,7 +12,7 @@ mod db;
 mod file;
 mod file_metadata;
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, serde::Serialize)]
 struct TempConfig {
     jwt_secret: String,
     mongodb_uri: String,
@@ -24,12 +24,28 @@ struct TempConfig {
     address: IpAddr
 }
 
+impl Default for TempConfig {
+    fn default() -> Self {
+        Self {
+            jwt_secret: "a-secret-key".to_string(),
+            mongodb_uri: "mongodb://localhost:27017".to_string(),
+            mongodb_name: "RC".to_string(),
+            redis_uri: "redis://localhost:6379".to_string(),
+            flat_storage_path: "./storage/flat".to_string(),
+            cache_storage_path: "./storage/cache".to_string(),
+            port: 8000,
+            address: "0.0.0.0".parse().unwrap()
+        }
+    }
+}
+
 impl TempConfig {
     fn from_env() -> Self {
         dotenv::dotenv().ok();
         let figment = Figment::new()
+            .merge(Toml::file("RC.toml"))
             .merge(Env::prefixed("RC_"))
-            .join(Toml::file("defaultConfig.toml"));
+            .join(Serialized::defaults(TempConfig::default()));
         figment.extract().unwrap()
     }
 }
@@ -111,12 +127,16 @@ fn index(
     Json(r)
 }
 
+use crate::db::connect::{MongoDb, Redis};
+use crate::db::FirstInit;
+
 #[launch]
 async fn rocket() -> _ {
     let config = TempConfig::from_env();
-    let mongodb = db::connect::MongoDb::init(&config.mongodb_uri, &config.mongodb_name).await;
-    let root_id = mongodb.first_init().await.unwrap();
-    let redis = db::connect::Redis::init(&config.redis_uri).await;
+    let mongodb = MongoDb::init(&config.mongodb_uri, &config.mongodb_name).await;
+    let _ = mongodb.first_init().await.unwrap();
+    let root_id = mongodb.get_root_id().await.unwrap();
+    let redis = Redis::init(&config.redis_uri).await;
 
     let config = MyConfig::from_temp(root_id, &config);
     let app_config = AppConfig::from_config(&config);

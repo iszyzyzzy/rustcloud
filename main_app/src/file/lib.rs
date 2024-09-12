@@ -2,6 +2,7 @@ use crate::db::models::File;
 use rocket::response;
 use rocket::response::Response;
 use rocket::response::Responder;
+use rocket::tokio::io::AsyncReadExt;
 use rocket::Request;
 use rocket::http::Header;
 
@@ -32,4 +33,11 @@ impl CustomFileResponse {
         Self { response: response.finalize() }
         
     }
+}
+
+pub async fn get_file_type(file: &rocket::fs::TempFile<'_>) -> Option<infer::Type> {
+    let mut stream = file.open().await.unwrap();
+    let mut buf = [0;512];
+    stream.read(&mut buf).await.unwrap();
+    infer::get(&buf)
 }
