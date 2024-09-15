@@ -3,3 +3,4 @@ members = [
     "main_app",
     "shared_lib"
 ]
+resolver = "2"
