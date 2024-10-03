@@ -5,3 +5,4 @@ members = [
     "thumbnail"
 ]
 default-members = ["main_app"]
+resolver = "2"
