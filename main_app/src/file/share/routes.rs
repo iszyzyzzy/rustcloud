@@ -104,7 +104,7 @@ pub async fn get_share_file(
     let db = &mongo.database;
     let collection = db.collection::<File>("files");
     if !redis.exists(&uuid).await {
-        return Err(ApiError::NotFound("Link not found".to_string().into()));
+        return Err(ApiError::NotFound("Link not found or expired".to_string().into()));
     }
     if redis.exists(format!("{}_password", uuid).as_str()).await {
         let true_password: String = redis.get(format!("{}_password", uuid).as_str()).await;
@@ -136,7 +136,7 @@ pub async fn get_share_file(
         match file_metadata.type_ {
             FileType::File => {
                 let _ = redis.decr(format!("{}_limit", uuid).as_str()).await;
-                return Ok(GetFileResponse::File(CustomFileResponse::new(file_metadata, storage_factory).await));
+                return Ok(GetFileResponse::File(CustomFileResponse::new(file_metadata, storage_factory,mongo).await?));
             },
             _ => {
                 return Err(ApiError::BadRequest("Target is not a file".to_string().into()));
@@ -157,7 +157,7 @@ pub async fn get_share_file(
     match file_metadata.type_ {
         FileType::File => {
             let _ = redis.decr(format!("{}_limit", uuid).as_str()).await;
-            Ok(GetFileResponse::File(CustomFileResponse::new(file_metadata, storage_factory).await))
+            Ok(GetFileResponse::File(CustomFileResponse::new(file_metadata, storage_factory,mongo).await?))
         },
         _ => {
             Err(ApiError::BadRequest("Target is not a file".to_string().into()))

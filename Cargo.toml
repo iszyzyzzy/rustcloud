@@ -1,5 +1,7 @@
 [workspace]
 members = [
     "main_app",
-    "shared_lib"
+    "shared_lib",
+    "thumbnail"
 ]
+default-members = ["main_app"]

@@ -30,7 +30,7 @@ pub async fn get_file(
 
     match metadata.type_ {
         FileType::File => {
-            Ok(CustomFileResponse::new(metadata, storage_factory).await)
+            Ok(CustomFileResponse::new(metadata, storage_factory, mongo).await?)
         }
         _ => {
             Err(ApiError::NotFound("Target is not a file".to_string().into()))

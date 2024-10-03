@@ -12,6 +12,8 @@ mod db;
 mod file;
 mod file_metadata;
 
+use rocket::data::{Limits, ToByteUnit};
+
 #[derive(serde::Deserialize, serde::Serialize)]
 struct TempConfig {
     jwt_secret: String,
@@ -21,7 +23,8 @@ struct TempConfig {
     flat_storage_path: String,
     cache_storage_path: String,
     port: u16,
-    address: IpAddr
+    address: IpAddr,
+    limits: Limits
 }
 
 impl Default for TempConfig {
@@ -31,10 +34,13 @@ impl Default for TempConfig {
             mongodb_uri: "mongodb://localhost:27017".to_string(),
             mongodb_name: "RC".to_string(),
             redis_uri: "redis://localhost:6379".to_string(),
-            flat_storage_path: "./storage/flat".to_string(),
-            cache_storage_path: "./storage/cache".to_string(),
+            //flat_storage_path: "./storage/flat".to_string(),
+            flat_storage_path: "./main_app/storage/flat".to_string(),
+            //cache_storage_path: "./storage/cache".to_string(),
+            cache_storage_path: "./main_app/storage/cache".to_string(),
             port: 8000,
-            address: "0.0.0.0".parse().unwrap()
+            address: "0.0.0.0".parse().unwrap(),
+            limits: Limits::default().limit("file", 4.gibibytes())
         }
     }
 }
@@ -59,7 +65,8 @@ pub struct MyConfig {
     pub cache_storage_path: String,
     pub port: u16,
     pub system_root_id: ObjectId,
-    pub address: IpAddr
+    pub address: IpAddr,
+    pub limits: Limits
 }
 
 impl MyConfig {
@@ -73,7 +80,8 @@ impl MyConfig {
             cache_storage_path: old.cache_storage_path.clone(),
             port: old.port,
             system_root_id: root_id,
-            address: old.address
+            address: old.address,
+            limits: old.limits.clone()
         }
     }
 }
@@ -81,7 +89,8 @@ impl MyConfig {
 struct AppConfig {
     port: u16,
     temp_dir: String,
-    address: IpAddr
+    address: IpAddr,
+    limits: Limits
 }
 
 impl AppConfig {
@@ -89,7 +98,8 @@ impl AppConfig {
         Self {
             port: config.port,
             temp_dir: config.cache_storage_path.clone(),
-            address: config.address
+            address: config.address,
+            limits: config.limits.clone()
         }
     }
     fn to_figment(&self) -> Figment {
@@ -97,6 +107,7 @@ impl AppConfig {
             .merge(("port", self.port))
             .merge(("temp_dir", self.temp_dir.clone()))
             .merge(("address", self.address))
+            .merge(("limits", self.limits.clone()))
     }
 }
 

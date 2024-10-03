@@ -1,4 +1,7 @@
 use crate::db::models::File;
+use crate::libs::ApiError;
+use crate::db::connect::MongoDb;
+use mongodb::bson::doc;
 use rocket::response;
 use rocket::response::Response;
 use rocket::response::Responder;
@@ -21,16 +24,24 @@ impl<'r> Responder<'r, 'static> for CustomFileResponse {
 }
 
 impl CustomFileResponse {
-    pub async fn new(metadata: File, factory: &rocket::State<Arc<Mutex<StorageFactory>>>) -> Self {
+    pub async fn new(metadata: File, factory: &rocket::State<Arc<Mutex<StorageFactory>>>, mongodb: &rocket::State<MongoDb>) -> Result<Self, ApiError> {
         let factory = factory.lock().await;
         let ext = rocket::http::ContentType::from_extension(metadata.name.split('.').last().unwrap());
-        let file = factory.get_file(&metadata).await.unwrap();
+
+        let metadata = if metadata.storage_type == "ref" {
+            let collection = mongodb.database.collection::<File>("files");
+            collection.find_one(doc! { "_id": metadata.path }).await.unwrap().unwrap()
+        } else {
+            metadata
+        };
+
+        let file =  factory.get_file(&metadata).await?;
         let mut response = Response::build();
         response
             .header(if let Some(ext) = ext { ext } else { rocket::http::ContentType::Binary })
             .header(Header::new("Content-Disposition", format!("attachment; filename=\"{}\"", metadata.name)))
             .streamed_body(file);
-        Self { response: response.finalize() }
+        Ok(Self { response: response.finalize() })
         
     }
 }

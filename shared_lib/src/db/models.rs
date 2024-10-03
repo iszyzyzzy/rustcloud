@@ -41,6 +41,22 @@ pub enum FileType {
     Root,
 }
 
+pub enum ThumbnailType {
+    Text,
+    Jpeg,
+    Webp
+}
+pub struct ThumbnailDetail {
+    pub type_: ThumbnailType,
+    pub file: ObjectId,
+}
+
+pub struct FileExtraMetadata {
+    pub detected_mime_type: String,
+    pub thumbnail: ObjectId,
+    pub file_references: Vec<ObjectId>, 
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct File {
     pub _id: ObjectId,
@@ -54,7 +70,7 @@ pub struct File {
     pub updated_at: i64,
     pub size: u64,//floder时可以随便填
     pub sha256: String,//floder时可以随便填
-    pub path: String,//floder时可以随便填
+    pub path: String,//floder时可以随便填, storage_type为ref为原文件ObjectId的Hex
     pub storage_type: String,
 }
 
