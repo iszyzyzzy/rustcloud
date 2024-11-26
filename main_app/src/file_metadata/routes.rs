@@ -13,6 +13,7 @@ use rocket::serde::json::Json;
 use rocket::tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use crate::file::storage_backend::ref_storage;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MetaDataCreateRequest {
     pub name: String,
@@ -76,8 +77,9 @@ pub async fn add_metadata(
         created_at: Utc::now().timestamp(),
         updated_at: Utc::now().timestamp(),
         children: vec![],
-        path: "FLAT".to_string(),
+        path: id.to_hex(),
         storage_type: metadata.storage_type,
+        extra_metadata: None,
     };
     let father = mongo
         .database
@@ -117,14 +119,41 @@ pub async fn add_metadata(
             Ok(Json(MetaDataCreateResponse::normal(id.to_string())))
         }
         FileType::File => {
-            let db = mongo.database.collection::<File>("files");
-            match db.find_one(doc! { "sha256": &metadata.sha256 , "storage_type": doc! {"$ne": "ref"}}).await {
+            let collection = mongo.database.collection::<File>("files");
+            //这里是在处理ref的情况，理由和file.GET那里一样
+            if let Some(exist) = ref_storage::find_and_add_ref(
+                &collection,
+                &metadata,).await? {
+                return Ok(Json(MetaDataCreateResponse::ref_file(exist._id.to_hex())));
+            }
+            let _: () = redis
+                .set(
+                    id.to_string().as_str(),
+                    serde_json::to_string(&metadata).unwrap().as_str(),
+                )
+                .await;
+            let _: () = redis.expire(id.to_string().as_str(), 24 * 60 * 60).await;
+            Ok(Json(MetaDataCreateResponse::normal(id.to_string())))
+            // TODO delete this
+            /*             match db
+                .find_one(doc! { "sha256": &metadata.sha256 , "storage_type": doc! {"$ne": "ref"}})
+                .await
+            {
                 Ok(Some(existed)) => {
                     let metadata = File {
                         storage_type: "ref".to_string(),
                         path: existed._id.to_hex(),
                         ..metadata
                     };
+                    //在ref母的metadata里加上file_references
+                    let mut extra_metadata = existed.extra_metadata.unwrap_or_default();
+                    extra_metadata.file_references.push(id);
+                    let _ = db
+                        .update_one(
+                            doc! { "_id": existed._id },
+                            doc! { "$set": doc! { "extra_metadata": extra_metadata } },
+                        )
+                        .await;
                     let _ = db.insert_one(metadata.clone()).await;
                     return Ok(Json(MetaDataCreateResponse::ref_file(id.to_string())));
                 }
@@ -138,9 +167,9 @@ pub async fn add_metadata(
                     let _: () = redis.expire(id.to_string().as_str(), 24 * 60 * 60).await;
                     Ok(Json(MetaDataCreateResponse::normal(id.to_string())))
                 }
-            }
+            } */
         }
-        _ => Err(ApiError::Forbidden("Permission denied".to_string().into())),
+        FileType::Root => Err(ApiError::Forbidden("Permission denied".to_string().into())),
     }
 }
 
@@ -197,7 +226,7 @@ pub enum Response {
     FileTree(FileTree),
 }
 
-fn check_permission(user: AuthenticatedUser, file: &File) -> Result<(), ApiError> {
+fn check_permission(user: &AuthenticatedUser, file: &File) -> Result<(), ApiError> {
     if file.owner != user.uuid {
         return Err(ApiError::Forbidden("Permission denied".to_string().into()));
     };
@@ -217,7 +246,7 @@ pub async fn get_metadata(
         .find_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()})
         .await;
     let file = mongo_error_check(file, Some("File"))?;
-    check_permission(user, &file)?;
+    check_permission(&user, &file)?;
     if tree {
         let tree = get_tree(&ObjectId::from_str(uuid).unwrap(), mongo).await;
         match tree {
@@ -226,7 +255,9 @@ pub async fn get_metadata(
             }
             Err(_) => {
                 return Err(ApiError::InternalServerError(
-                    "Unknown error during tree generation".to_string().into(),
+                    "Unknown error during file tree generation"
+                        .to_string()
+                        .into(),
                 ))
             }
         }
@@ -269,7 +300,7 @@ pub async fn update_metadata(
         updated_at: Utc::now().timestamp(),
         ..new_metadata
     };
-    check_permission(user, &file)?;
+    check_permission(&user, &file)?;
     let old_father = match db.find_one(doc! {"_id": file.father}).await {
         Ok(Some(file)) => file,
         Ok(None) => {
@@ -336,11 +367,28 @@ pub async fn delete_metadata(
         return Ok(status::NoContent);
     }
     let db = mongo.database.collection::<File>("files");
+    match delete_file_l(uuid, &user, &db, storage_factory).await {
+        Ok(_) => {}
+        Err(e) => {
+            return Err(e);
+        }
+    }
+    Ok(status::NoContent)
+}
+
+async fn delete_file_l(
+    uuid: &str,
+    user: &AuthenticatedUser,
+    db: &mongodb::Collection<File>,
+    storage_factory: &rocket::State<Arc<Mutex<StorageFactory>>>,
+) -> Result<(), ApiError> {
     let file = db
         .find_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()})
         .await;
     let file = mongo_error_check(file, Some("File"))?;
     check_permission(user, &file)?;
+
+    //删除父文件夹里的children里的这个文件
     let father = db.find_one(doc! {"_id": file.father}).await;
     let father = mongo_error_check(father, Some("File"))?;
     let mut father_children = father.children;
@@ -352,11 +400,49 @@ pub async fn delete_metadata(
         )
         .await
         .unwrap();
+
+    //这里是前处理
+    //如果是文件夹，还要把children都删了
+    //如果是文件，检查是不是ref,如果是ref子要删除母的file_references，如果是母要重新选一个母
+    match file.type_ {
+        FileType::Folder => {
+            for child in &file.children {
+                Box::pin(delete_file_l(&child.to_hex(), user, db, storage_factory)).await?;
+            }
+        }
+        FileType::File => {
+            if file.storage_type == "ref" {
+                ref_storage::remove_ref(db, &file).await?;
+                let _ = db
+                    .delete_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()})
+                    .await
+                    .unwrap();
+                return Ok(());
+            }
+            if let Some(ext) = &file.extra_metadata {
+                if ext.file_references.len() != 0 {
+                    ref_storage::change_mother(db, &file).await?;
+                }
+                let _ = db
+                    .delete_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()})
+                    .await
+                    .unwrap();
+                return Ok(());
+            }
+        }
+        FileType::Root => {
+            return Err(ApiError::Forbidden("Permission denied".to_string().into()));
+        }
+    }
+
+    //删除文件metadata
     let _ = db
         .delete_one(doc! {"_id": ObjectId::from_str(uuid).unwrap()})
         .await
         .unwrap();
+
+    //删除文件
     let factory = storage_factory.lock().await;
     let _ = factory.delete_file(&file).await;
-    Ok(status::NoContent)
+    Ok(())
 }

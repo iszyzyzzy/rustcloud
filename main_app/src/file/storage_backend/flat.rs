@@ -39,7 +39,7 @@ async fn check_file_sha256(file_path: &Path, sha256: &str) -> Result<String, ()>
 }
 
 fn generate_file_path(metadata: &File, config: &StorageConfig) -> String {
-    format!("{}/{}", config.flat_storage_path, metadata._id)
+    format!("{}/{}", config.flat_storage_path, metadata.path)
 }
 
 pub struct LocalFlatStorageBackend {
@@ -53,7 +53,7 @@ impl StorageBackend for LocalFlatStorageBackend {
             config: config.clone(),
         }
     }
-    async fn save_file(
+    async fn _save_file(
         &self,
         metadata: &File,
         file:&mut TempFile<'_>,

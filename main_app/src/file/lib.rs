@@ -10,6 +10,7 @@ use rocket::Request;
 use rocket::http::Header;
 
 use super::storage_backend::lib::StorageFactory;
+use std::str::FromStr;
 use std::sync::Arc;
 use rocket::tokio::sync::Mutex;
 
@@ -28,9 +29,9 @@ impl CustomFileResponse {
         let factory = factory.lock().await;
         let ext = rocket::http::ContentType::from_extension(metadata.name.split('.').last().unwrap());
 
-        let metadata = if metadata.storage_type == "ref" {
+        let metadata = if metadata.storage_type == "ref" {//因为storage backend并没有传入db实例，只能在这里处理ref了
             let collection = mongodb.database.collection::<File>("files");
-            collection.find_one(doc! { "_id": metadata.path }).await.unwrap().unwrap()
+            collection.find_one(doc! { "_id": mongodb::bson::oid::ObjectId::from_str(metadata.path.as_str()).unwrap() }).await.unwrap().unwrap()
         } else {
             metadata
         };

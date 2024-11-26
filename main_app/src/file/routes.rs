@@ -7,10 +7,11 @@ use mongodb::bson::oid::ObjectId;
 use rocket::response::status;
 use std::str::FromStr;
 
-use super::storage_backend::lib::StorageFactory;
-use std::sync::Arc;
-use rocket::tokio::sync::Mutex;
 use super::lib::CustomFileResponse;
+use super::storage_backend::lib::StorageFactory;
+use super::storage_backend::ref_storage;
+use rocket::tokio::sync::Mutex;
+use std::sync::Arc;
 
 #[get("/<uuid>")]
 pub async fn get_file(
@@ -22,20 +23,20 @@ pub async fn get_file(
     let db = &mongo.database;
     let collection = db.collection::<File>("files");
 
-    let metadata = collection.find_one(doc! { "_id": ObjectId::from_str(uuid).unwrap() }).await;
+    let metadata = collection
+        .find_one(doc! { "_id": ObjectId::from_str(uuid).unwrap() })
+        .await;
 
     let metadata = mongo_error_check(metadata, Some("File"))?;
 
     check_file_permission(&user, &metadata)?;
 
     match metadata.type_ {
-        FileType::File => {
-            Ok(CustomFileResponse::new(metadata, storage_factory, mongo).await?)
-        }
-        _ => {
-            Err(ApiError::NotFound("Target is not a file".to_string().into()))
-        }
-    } 
+        FileType::File => Ok(CustomFileResponse::new(metadata, storage_factory, mongo).await?),
+        _ => Err(ApiError::NotFound(
+            "Target is not a file".to_string().into(),
+        )),
+    }
 }
 
 #[post("/<uuid>", data = "<file>")]
@@ -47,7 +48,6 @@ pub async fn upload_file(
     redis: &rocket::State<Redis>,
     storage_factory: &rocket::State<Arc<Mutex<StorageFactory>>>,
 ) -> Result<status::NoContent, ApiError> {
-
     if !redis.exists(uuid).await {
         return Err(ApiError::NotFound("Metadata not found".to_string().into()));
     };
@@ -59,9 +59,11 @@ pub async fn upload_file(
     let collection = db.collection::<File>("files");
 
     let factory = storage_factory.lock().await;
-    
-    let file_type = super::lib::get_file_type(&file).await; 
-    let save_result = factory.check_sha256_and_save(&metadata, None,&mut file).await?;
+
+    let file_type = super::lib::get_file_type(&file).await;
+    let save_result = factory
+        .check_sha256_and_save(&metadata, None, &mut file)
+        .await?;
 
     let metadata = File {
         size: save_result.size,
@@ -71,12 +73,12 @@ pub async fn upload_file(
     let _ = collection
         .update_one(
             doc! { "_id": metadata.father },
-            doc! { "$push": { "children": metadata._id } }
+            doc! { "$push": { "children": metadata._id } },
         )
         .await;
     let _: () = redis.delete(uuid).await;
     match file_type {
-        _ => Ok(status::NoContent)
+        _ => Ok(status::NoContent),
     }
 }
 
@@ -99,17 +101,53 @@ pub async fn update_file(
 ) -> Result<status::NoContent, ApiError> {
     let db = &mongo.database;
     let collection = db.collection::<File>("files");
-    let metadata = mongo_error_check(collection.find_one(doc! { "_id": ObjectId::from_str(uuid).unwrap() }).await, Some("File"))?;
+    let metadata = mongo_error_check(
+        collection
+            .find_one(doc! { "_id": ObjectId::from_str(uuid).unwrap() })
+            .await,
+        Some("File"),
+    )?;
     check_file_permission(&user, &metadata)?;
     match metadata.type_ {
         FileType::File => {}
         _ => {
-            return Err(ApiError::BadRequest("Target is not a file".to_string().into()));
+            return Err(ApiError::BadRequest(
+                "Target is not a file".to_string().into(),
+            ));
         }
+    }
+    //先看看原本是不是ref,是的话先清理原本的ref
+    if metadata.storage_type.as_str() == "ref" {
+        ref_storage::remove_ref(&collection, &metadata).await?;
+    }
+    //如果是ref_mother的话要change_mother
+    if let Some(ext) = &metadata.extra_metadata {
+        if ext.file_references.len() > 0 {
+            ref_storage::change_mother(&collection, &metadata).await?;
+        }
+    }
+    //看看新的是否可以ref
+    //遇到可以ref的就直接ref然后返回，不管传上来的是什么了
+    if let Some(ref_mother) = ref_storage::find_and_add_ref(&collection, &metadata).await?
+    {
+        let _ = collection
+            .update_one(
+                doc! { "_id": metadata._id },
+                doc! { "$set": doc! { "storage_type": "ref" },
+                            "$set": doc! { "path": ref_mother._id.to_hex() },
+                            "$set": doc! { "updated_at": chrono::Utc::now().timestamp() },
+                            "$set": doc! { "sha256": ref_mother.sha256.clone() },
+                            "$set": doc! { "size": ref_mother.size as i64 },
+                },
+            )
+            .await;
+        return Ok(status::NoContent);
     }
 
     let factory = storage_factory.lock().await;
-    let save_result = factory.check_sha256_and_save(&metadata, Some(&form.sha256.clone()), &mut form.file).await?;
+    let save_result = factory
+        .check_sha256_and_save(&metadata, Some(&form.sha256.clone()), &mut form.file)
+        .await?;
 
     let _ = collection
         .update_one(
@@ -117,9 +155,9 @@ pub async fn update_file(
             doc! { "$set": doc! { "sha256": save_result.sha256 },
                     "$set": doc! { "updated_at": chrono::Utc::now().timestamp() },
                     "$set": doc! { "size": save_result.size as i64 },
-            }
+            },
         )
-        .await; 
+        .await;
     Ok(status::NoContent)
 }
 

@@ -17,7 +17,7 @@ pub trait StorageBackend: Send + Sync {
     where
         Self: Sized;
 
-    async fn save_file(&self, metadata: &File, file:&mut  TempFile<'_>) -> Result<SaveResult, ApiError>;
+    async fn _save_file(&self, metadata: &File, file:&mut  TempFile<'_>) -> Result<SaveResult, ApiError>;
     async fn check_sha256_and_save(&self, metadata: &File, sha256: &str, file:&mut TempFile<'_>) -> Result<SaveResult, ApiError>;
     async fn get_file(&self, metadata: &File) -> Result<AsyncFile, ApiError>;
     async fn delete_file(&self, metadata: &File) -> Result<(), ApiError>;
@@ -70,9 +70,9 @@ impl StorageFactory {
         backend.get_file(metadata).await
     }
 
-    pub async fn save_file(&self, metadata: &File, file: &mut TempFile<'_>) -> Result<SaveResult, ApiError> {
+    pub async fn _save_file(&self, metadata: &File, file: &mut TempFile<'_>) -> Result<SaveResult, ApiError> {
         let backend = self.get_backend_check(&metadata.storage_type)?;
-        backend.save_file(metadata, file).await
+        backend._save_file(metadata, file).await
     }
 
     pub async fn check_sha256_and_save(&self, metadata: &File, sha256: Option<&str>, file:&mut TempFile<'_>) -> Result<SaveResult, ApiError> {

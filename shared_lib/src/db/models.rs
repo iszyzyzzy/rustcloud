@@ -41,20 +41,40 @@ pub enum FileType {
     Root,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ThumbnailType {
     Text,
     Jpeg,
     Webp
 }
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ThumbnailDetail {
     pub type_: ThumbnailType,
     pub file: ObjectId,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FileExtraMetadata {
-    pub detected_mime_type: String,
-    pub thumbnail: ObjectId,
+    pub detected_mime_type: Option<String>,
+    pub thumbnail: Option<ObjectId>,
     pub file_references: Vec<ObjectId>, 
+}
+
+impl Default for FileExtraMetadata {
+    fn default() -> Self {
+        Self {
+            detected_mime_type: None,
+            thumbnail: None,
+            file_references: vec![],
+        }
+    }
+}
+
+
+impl From<FileExtraMetadata> for mongodb::bson::Bson {
+    fn from(metadata: FileExtraMetadata) -> mongodb::bson::Bson {
+        mongodb::bson::to_bson(&metadata).unwrap_or(mongodb::bson::Bson::Null)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -70,8 +90,9 @@ pub struct File {
     pub updated_at: i64,
     pub size: u64,//floder时可以随便填
     pub sha256: String,//floder时可以随便填
-    pub path: String,//floder时可以随便填, storage_type为ref为原文件ObjectId的Hex
+    pub path: String,//floder时可以随便填, storage_type为ref为原文件ObjectId的Hex,为flat时为存储的文件id
     pub storage_type: String,
+    pub extra_metadata: Option<FileExtraMetadata>,
 }
 
 impl File {
@@ -89,6 +110,7 @@ impl File {
             sha256: "".to_string(),
             path: "".to_string(),
             storage_type: "FLAT".to_string(),
+            extra_metadata: None,
         }
     }
 }

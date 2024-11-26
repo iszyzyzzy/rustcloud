@@ -144,7 +144,7 @@ use crate::db::FirstInit;
 #[launch]
 async fn rocket() -> _ {
     let config = TempConfig::from_env();
-    let mongodb = MongoDb::init(&config.mongodb_uri, &config.mongodb_name).await;
+    let mut mongodb = MongoDb::init(&config.mongodb_uri, &config.mongodb_name).await;
     let _ = mongodb.first_init().await.unwrap();
     let root_id = mongodb.get_root_id().await.unwrap();
     let redis = Redis::init(&config.redis_uri).await;

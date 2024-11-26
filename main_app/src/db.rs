@@ -6,11 +6,11 @@ use mongodb::bson::{doc, oid::ObjectId};
 use shared_lib::db::models::{File, FileType, LoginedDevice};
 
 pub trait FirstInit {
-    async fn first_init(&self) -> Result<(),()>;
+    async fn first_init(&mut self) -> Result<(),()>;
 }
 
 impl FirstInit for MongoDb {
-    async fn first_init(&self) -> Result<(),()> {
+    async fn first_init(&mut self) -> Result<(),()> {
         let collection_list = self.database.list_collection_names().await.unwrap();
         let check_collection = vec![
             "users".to_string(),
@@ -60,8 +60,9 @@ impl FirstInit for MongoDb {
             updated_at: chrono::Utc::now().timestamp(),
             size: 0,
             sha256: "".to_string(),
-            path: "FLAT".to_string(),
+            path: root_id.to_hex(),
             storage_type: "FLAT".to_string(),
+            extra_metadata: None,
         };
         let _ = metadata_collection.insert_one(root).await;
 
@@ -85,11 +86,10 @@ impl FirstInit for MongoDb {
 }
 
 impl FirstInit for Redis {
-    async fn first_init(&self) -> Result<(),()> {
-        let mut con = self.client.get_connection().unwrap();
-        redis::cmd("FLUSHALL").execute(&mut con);
-        Ok(())
-    }
+    async fn first_init(&mut self) -> Result<(),()> {
+            redis::cmd("FLUSHALL").query::<()>(&mut self.client).unwrap();
+            Ok(())
+        }
 }
 
 fn compare_vec(a: &[String], b: &[String]) -> bool {

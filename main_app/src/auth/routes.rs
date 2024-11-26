@@ -25,6 +25,7 @@ pub struct LoginResponse {
     pub username: String,
     pub nickname: String,
     pub token: String,
+    pub expire_at: i64,
 }
 
 #[post("/login", data = "<user>")]
@@ -57,6 +58,7 @@ pub async fn login(
                 username: login_user.username,
                 nickname: login_user.nickname,
                 token,
+                expire_at: chrono::Utc::now().timestamp() + 4 * 60 * 60 - 1,//-1做保险
             }))
         }
         Err(_) => {
